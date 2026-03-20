@@ -176,15 +176,15 @@ Useful but secondary docs:
 
 - `README.md`
   Good high-level product description, but not reliable for install instructions.
-- `CLAUDE.md`
-  Good architecture/memory notes, but it is a narrative project memory file, not the primary operational handoff.
+- `AGENTS.md`
+  Secondary agent memory for Codex sessions. Useful for architecture/convention notes, but it is not the primary operational handoff.
 
 Areas where docs or behavior diverge:
 
 - `README.md` installation instructions are stale/wrong for the current state of distribution.
 - `README.md` screenshot is still a placeholder.
 - `README.md` roadmap is aspirational, not implementation proof.
-- `CLAUDE.md` verification section matches current cargo checks, but it does not replace direct verification.
+- `AGENTS.md` is secondary to `BUILD.md` and should stay aligned with it, but it does not replace direct verification.
 
 Config and state files that affect behavior:
 
