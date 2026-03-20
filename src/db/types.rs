@@ -26,6 +26,17 @@ pub struct ViewInfo {
     pub create_sql: Option<String>,
 }
 
+/// Metadata about a SQLite index or trigger.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SchemaObjectInfo {
+    /// Schema object name.
+    pub name: String,
+    /// Table this object is attached to.
+    pub table_name: String,
+    /// Original `CREATE ...` SQL, if available.
+    pub create_sql: Option<String>,
+}
+
 /// Metadata about a SQLite column.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColumnInfo {
@@ -65,6 +76,10 @@ pub struct DatabaseSummary {
     pub tables: Vec<TableInfo>,
     /// Discovered views.
     pub views: Vec<ViewInfo>,
+    /// Discovered indexes.
+    pub indexes: Vec<SchemaObjectInfo>,
+    /// Discovered triggers.
+    pub triggers: Vec<SchemaObjectInfo>,
 }
 
 /// A paginated slice of table data.
@@ -136,6 +151,18 @@ pub struct SchemaDiff {
     pub modified_tables: Vec<TableSchemaDiff>,
     /// Tables whose schemas match exactly.
     pub unchanged_tables: Vec<String>,
+    /// Indexes only present on the right side.
+    pub added_indexes: Vec<SchemaObjectInfo>,
+    /// Indexes only present on the left side.
+    pub removed_indexes: Vec<SchemaObjectInfo>,
+    /// Indexes present on both sides but with different definitions.
+    pub modified_indexes: Vec<(SchemaObjectInfo, SchemaObjectInfo)>,
+    /// Triggers only present on the right side.
+    pub added_triggers: Vec<SchemaObjectInfo>,
+    /// Triggers only present on the left side.
+    pub removed_triggers: Vec<SchemaObjectInfo>,
+    /// Triggers present on both sides but with different definitions.
+    pub modified_triggers: Vec<(SchemaObjectInfo, SchemaObjectInfo)>,
 }
 
 /// Schema changes within a single table.

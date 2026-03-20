@@ -318,6 +318,8 @@ fn database_summary_strategy() -> impl Strategy<Value = DatabaseSummary> {
             .map(|(name, columns)| table_info(name, columns))
             .collect(),
         views: Vec::new(),
+        indexes: Vec::new(),
+        triggers: Vec::new(),
     })
 }
 

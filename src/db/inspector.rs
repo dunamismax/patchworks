@@ -8,8 +8,8 @@ use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags, Row};
 
 use crate::db::types::{
-    ColumnInfo, DatabaseSummary, SortDirection, SqlValue, TableInfo, TablePage, TableQuery,
-    TableSort, ViewInfo,
+    ColumnInfo, DatabaseSummary, SchemaObjectInfo, SortDirection, SqlValue, TableInfo, TablePage,
+    TableQuery, TableSort, ViewInfo,
 };
 use crate::error::{PatchworksError, Result};
 
@@ -28,10 +28,12 @@ pub fn inspect_database(path: &Path) -> Result<DatabaseSummary> {
     let connection = open_read_only(path)?;
     let mut tables = Vec::new();
     let mut views = Vec::new();
+    let mut indexes = Vec::new();
+    let mut triggers = Vec::new();
 
     let mut statement = connection.prepare(
         "
-        SELECT type, name, sql
+        SELECT type, name, tbl_name, sql
         FROM sqlite_master
         WHERE name NOT LIKE 'sqlite_%'
         ORDER BY type, name
@@ -42,12 +44,13 @@ pub fn inspect_database(path: &Path) -> Result<DatabaseSummary> {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, String>(1)?,
-            row.get::<_, Option<String>>(2)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
         ))
     })?;
 
     for entry in entries {
-        let (entry_type, name, create_sql) = entry?;
+        let (entry_type, name, table_name, create_sql) = entry?;
         if entry_type == "table" {
             let columns = load_columns(&connection, &name)?;
             let primary_key = columns
@@ -66,6 +69,18 @@ pub fn inspect_database(path: &Path) -> Result<DatabaseSummary> {
             });
         } else if entry_type == "view" {
             views.push(ViewInfo { name, create_sql });
+        } else if entry_type == "index" {
+            indexes.push(SchemaObjectInfo {
+                name,
+                table_name,
+                create_sql,
+            });
+        } else if entry_type == "trigger" {
+            triggers.push(SchemaObjectInfo {
+                name,
+                table_name,
+                create_sql,
+            });
         }
     }
 
@@ -73,6 +88,8 @@ pub fn inspect_database(path: &Path) -> Result<DatabaseSummary> {
         path: path.to_string_lossy().into_owned(),
         tables,
         views,
+        indexes,
+        triggers,
     })
 }
 
@@ -313,28 +330,36 @@ fn build_order_by_clause(table: &TableInfo, sort: Option<&TableSort>) -> Result<
                 SortDirection::Asc => "ASC",
                 SortDirection::Desc => "DESC",
             };
-            Ok(format!(
-                " ORDER BY {} {}",
-                quote_identifier(&sort.column),
-                direction
-            ))
+            let mut order_terms = vec![format!("{} {}", quote_identifier(&sort.column), direction)];
+            order_terms.extend(stable_tie_breaker_terms(table, Some(sort.column.as_str())));
+            Ok(format!(" ORDER BY {}", order_terms.join(", ")))
         }
         None => Ok(default_order_clause(table)),
     }
 }
 
 fn default_order_clause(table: &TableInfo) -> String {
+    format!(
+        " ORDER BY {}",
+        stable_tie_breaker_terms(table, None).join(", ")
+    )
+}
+
+fn stable_tie_breaker_terms(table: &TableInfo, skip_column: Option<&str>) -> Vec<String> {
     if table.primary_key.is_empty() {
-        " ORDER BY rowid ASC".to_owned()
-    } else {
-        let columns = table
-            .primary_key
-            .iter()
-            .map(|column| quote_identifier(column))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(" ORDER BY {}", columns)
+        return if skip_column == Some("rowid") {
+            Vec::new()
+        } else {
+            vec!["rowid ASC".to_owned()]
+        };
     }
+
+    table
+        .primary_key
+        .iter()
+        .filter(|column| Some(column.as_str()) != skip_column)
+        .map(|column| format!("{} ASC", quote_identifier(column)))
+        .collect()
 }
 
 fn select_column_list(columns: &[ColumnInfo]) -> String {
@@ -343,4 +368,56 @@ fn select_column_list(columns: &[ColumnInfo]) -> String {
         .map(|column| quote_identifier(&column.name))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_order_by_clause, default_order_clause};
+    use crate::db::types::{ColumnInfo, SortDirection, TableInfo, TableSort};
+
+    fn sample_table() -> TableInfo {
+        TableInfo {
+            name: "items".to_owned(),
+            columns: vec![
+                ColumnInfo {
+                    name: "id".to_owned(),
+                    col_type: "INTEGER".to_owned(),
+                    nullable: false,
+                    default_value: None,
+                    is_primary_key: true,
+                },
+                ColumnInfo {
+                    name: "name".to_owned(),
+                    col_type: "TEXT".to_owned(),
+                    nullable: true,
+                    default_value: None,
+                    is_primary_key: false,
+                },
+            ],
+            row_count: 0,
+            primary_key: vec!["id".to_owned()],
+            create_sql: None,
+        }
+    }
+
+    #[test]
+    fn sorted_pages_include_primary_key_tie_breaker() {
+        let order = build_order_by_clause(
+            &sample_table(),
+            Some(&TableSort {
+                column: "name".to_owned(),
+                direction: SortDirection::Desc,
+            }),
+        )
+        .expect("build order clause");
+
+        assert_eq!(order, " ORDER BY \"name\" DESC, \"id\" ASC");
+    }
+
+    #[test]
+    fn default_order_clause_uses_primary_key_columns() {
+        let order = default_order_clause(&sample_table());
+
+        assert_eq!(order, " ORDER BY \"id\" ASC");
+    }
 }

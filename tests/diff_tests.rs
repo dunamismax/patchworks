@@ -3,7 +3,7 @@ use std::path::Path;
 use patchworks::db::differ::diff_databases;
 use patchworks::db::inspector::{inspect_database, read_table_page};
 use patchworks::db::snapshot::SnapshotStore;
-use patchworks::db::types::{SortDirection, TableQuery, TableSort};
+use patchworks::db::types::{SortDirection, SqlValue, TableQuery, TableSort};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -190,4 +190,121 @@ fn data_diff_treats_negative_zero_and_zero_as_equal() {
     let measurements = &diff.data_diffs[0];
     assert_eq!(measurements.stats.modified, 0);
     assert_eq!(measurements.stats.unchanged, 1);
+}
+
+#[test]
+fn sorted_pagination_is_deterministic_for_duplicate_sort_values() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let db_path = create_db_with_sql(
+        &temp_dir,
+        "stable-sort.sqlite",
+        "
+        CREATE TABLE items (id INTEGER PRIMARY KEY, category TEXT NOT NULL, name TEXT NOT NULL);
+        INSERT INTO items (id, category, name) VALUES
+            (3, 'same', 'gamma'),
+            (1, 'same', 'alpha'),
+            (4, 'same', 'delta'),
+            (2, 'same', 'beta');
+        ",
+    );
+
+    let first_page = read_table_page(
+        &db_path,
+        "items",
+        &TableQuery {
+            page: 0,
+            page_size: 2,
+            sort: Some(TableSort {
+                column: "category".to_owned(),
+                direction: SortDirection::Asc,
+            }),
+        },
+    )
+    .expect("read first page");
+    let second_page = read_table_page(
+        &db_path,
+        "items",
+        &TableQuery {
+            page: 1,
+            page_size: 2,
+            sort: Some(TableSort {
+                column: "category".to_owned(),
+                direction: SortDirection::Asc,
+            }),
+        },
+    )
+    .expect("read second page");
+
+    let ids = first_page
+        .rows
+        .iter()
+        .chain(second_page.rows.iter())
+        .map(|row| match &row[0] {
+            SqlValue::Integer(value) => *value,
+            other => panic!("expected integer id, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(ids, vec![1, 2, 3, 4]);
+}
+
+#[test]
+fn sql_export_preserves_schema_objects_and_avoids_trigger_side_effects() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db_with_sql(
+        &temp_dir,
+        "objects-left.sqlite",
+        "
+        CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL, qty INTEGER NOT NULL);
+        CREATE TABLE audit (item_id INTEGER NOT NULL, action TEXT NOT NULL);
+        CREATE INDEX idx_items_name ON items(name);
+        CREATE TRIGGER items_audit_update AFTER UPDATE ON items
+        BEGIN
+            INSERT INTO audit (item_id, action) VALUES (NEW.id, 'updated');
+        END;
+        INSERT INTO items (id, name, qty) VALUES (1, 'alpha', 1), (2, 'beta', 1);
+        ",
+    );
+    let right_path = create_db_with_sql(
+        &temp_dir,
+        "objects-right.sqlite",
+        "
+        CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL, qty INTEGER NOT NULL);
+        CREATE TABLE audit (item_id INTEGER NOT NULL, action TEXT NOT NULL);
+        CREATE INDEX idx_items_name ON items(name, qty);
+        CREATE TRIGGER items_audit_update AFTER UPDATE OF name ON items
+        BEGIN
+            INSERT INTO audit (item_id, action) VALUES (NEW.id, 'renamed');
+        END;
+        INSERT INTO items (id, name, qty) VALUES (1, 'alpha', 1), (2, 'beta', 2);
+        ",
+    );
+    let generated_path = temp_dir.path().join("objects-generated.sqlite");
+
+    std::fs::copy(&left_path, &generated_path).expect("copy left db");
+    let diff = diff_databases(&left_path, &right_path).expect("compute diff");
+    assert_eq!(diff.schema.modified_indexes.len(), 1);
+    assert_eq!(diff.schema.modified_triggers.len(), 1);
+
+    let generated = Connection::open(&generated_path).expect("open generated db");
+    generated
+        .execute_batch(&diff.sql_export)
+        .expect("apply exported sql");
+
+    let generated_summary = inspect_database(&generated_path).expect("inspect generated");
+    let right_summary = inspect_database(&right_path).expect("inspect right");
+    assert_eq!(generated_summary.indexes, right_summary.indexes);
+    assert_eq!(generated_summary.triggers, right_summary.triggers);
+
+    let generated_items =
+        read_table_page(&generated_path, "items", &TableQuery::default()).expect("generated items");
+    let right_items =
+        read_table_page(&right_path, "items", &TableQuery::default()).expect("right items");
+    assert_eq!(generated_items.rows, right_items.rows);
+
+    let generated_audit =
+        read_table_page(&generated_path, "audit", &TableQuery::default()).expect("generated audit");
+    let right_audit =
+        read_table_page(&right_path, "audit", &TableQuery::default()).expect("right audit");
+    assert_eq!(generated_audit.rows, right_audit.rows);
 }

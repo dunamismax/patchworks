@@ -9,13 +9,17 @@ Patchworks is a Rust desktop app for inspecting and diffing SQLite databases. It
 - Diff two databases at schema level and row level
 - Save snapshots of a live database and compare against them later
 - Preview SQL export in the UI, copy it to the clipboard, or save it to disk
+- Preserve tracked indexes and triggers in generated SQL migrations
 - Create a snapshot from the CLI with `patchworks --snapshot <db>`
 
 Current limitations:
 
 - Views are inspect-only in the current phase; they are not diffed or exported.
+- Indexes and triggers are preserved in generated SQL, but they are not surfaced in dedicated UI panels yet.
 - There is no headless CLI for `diff`, `inspect`, or SQL export yet.
 - Snapshot state is stored under `~/.patchworks/`.
+- Very large exports and snapshot seeds still materialize substantial data in memory.
+- Live / WAL-backed / actively changing databases are still best-effort.
 - The crate is not published on crates.io yet.
 
 ## Requirements
@@ -74,7 +78,9 @@ Patchworks creates a local store in your home directory:
 - Diff requests now run in the background, so the UI stays responsive while large comparisons complete.
 - Opening a right-side database from the toolbar loads it, but you still need to click `Diff`.
 - Row diffs are only computed for tables that exist on both sides.
+- Sorted pagination now adds a primary-key / `rowid` tie-breaker so duplicate sort values page deterministically.
 - SQL export favors correctness over minimal migrations when a table schema changes.
+- Generated SQL now drops and recreates tracked triggers after data changes so migration DML does not accidentally fire left-side trigger logic.
 
 ## Repository Layout
 

@@ -14,11 +14,11 @@
 
 ## Completed In This Pass
 
-- Moved diff execution off the main `egui` thread in `src/app.rs` by dispatching `diff_databases()` work onto a background worker and polling the result during `update()`.
-- Added explicit in-progress diff state in `src/state/workspace.rs` and visible loading feedback in `src/ui/diff_view.rs` plus the toolbar.
-- Cleared stale diff results whenever a new left/right database is loaded so completed background work cannot overwrite a newly selected comparison target.
-- Added focused unit tests in `src/app.rs` for successful background diff completion and in-flight diff cancellation when the loaded database changes.
-- Updated `README.md`, `AGENTS.md`, and this file so the documented behavior reflects background diff execution and the commands re-verified in this pass.
+- Extended SQLite inspection in `src/db/inspector.rs` so `DatabaseSummary` now captures tracked indexes and triggers from `sqlite_master` alongside tables and views.
+- Extended schema diffing in `src/diff/schema.rs` and SQL export in `src/diff/export.rs` so generated migrations now drop/recreate changed indexes and triggers, and defer trigger recreation until after migration DML to avoid left-side trigger side effects during export application.
+- Stabilized sorted pagination in `src/db/inspector.rs` by appending primary-key / `rowid` tie-breakers whenever the user sorts by a non-unique column.
+- Added focused regression coverage in `tests/diff_tests.rs` plus new unit tests in `src/db/inspector.rs` / `src/diff/export.rs` for schema-object preservation, trigger-safe export application, and deterministic sorted pagination.
+- Updated `README.md` and this file so the documented behavior reflects schema-object preservation, stable pagination, and the commands re-verified in this pass.
 
 ## Project Baseline
 
@@ -28,11 +28,12 @@ What it currently does:
 
 - Open zero, one, or two SQLite database files in a native desktop UI.
 - Inspect tables and views from a SQLite file.
+- Track indexes and triggers from `sqlite_master` for schema comparison and SQL export.
 - Browse table rows with pagination and sortable columns.
 - Diff two databases at schema level and row level.
 - Save snapshots of a database into a local Patchworks store under `~/.patchworks/`.
 - Compare a live database against a saved snapshot.
-- Generate SQL intended to transform the left database into the right database.
+- Generate SQL intended to transform the left database into the right database, including tracked index and trigger definitions.
 - Preview SQL in the UI, copy it to the clipboard, or save it to disk.
 
 What it does not currently do:
@@ -100,7 +101,7 @@ The implemented system is cohesive, lightweight, and intentionally narrow in sco
   - Snapshot database copies are stored in `~/.patchworks/snapshots/<uuid>.sqlite`.
   - The store schema is created lazily by `SnapshotStore::ensure_schema()`.
 - Diff behavior:
-  - Schema diff covers tables and columns only.
+  - Schema diff still centers on table/column changes in the UI, but the inspected model now also tracks indexes and triggers from `sqlite_master` so export planning can preserve them.
   - Row diff is computed only for tables that exist on both sides.
   - Row diff prefers a shared primary key and falls back to `rowid` with warnings.
   - Large-table warning threshold is `100_000` rows.
@@ -111,6 +112,8 @@ The implemented system is cohesive, lightweight, and intentionally narrow in sco
   - Removed tables are dropped.
   - Modified tables are rebuilt from the right-side schema and reseeded from the right database.
   - Unchanged-schema tables get incremental `DELETE`/`INSERT`/`UPDATE` statements.
+  - Changed indexes are dropped and recreated from the right-side schema definitions.
+  - Triggers on affected tables are dropped before migration DML and recreated from the right side after data changes finish so export application does not accidentally execute left-side trigger logic.
   - Rowid-fallback deletes use the stored row identity instead of guessing from the first visible column.
   - Missing primary-key columns or row values during export are now treated as an explicit invalid state.
 - Quality workflow behavior:
@@ -128,6 +131,7 @@ The implemented system is cohesive, lightweight, and intentionally narrow in sco
   - Views are listed in the side panel, but remain inspect-only.
 - Table paging behavior:
   - The app now reuses already-inspected `TableInfo` values when refreshing visible table pages.
+  - User-selected sorts now append a deterministic primary-key / `rowid` tie-breaker so duplicate sort values page stably across boundaries.
   - The public `read_table_page()` helper still performs its own lookup for callers that only have a path and table name.
 
 ## Verified Build And Run Workflow
@@ -152,15 +156,16 @@ Notes:
 The following commands were run successfully in `/Users/sawyer/github/patchworks` on 2026-03-20:
 
 ```bash
+cargo test --test diff_tests
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-cargo nextest run
 ```
 
 Still valid from the previous 2026-03-20 verification baseline, but not re-run in this pass:
 
 ```bash
+cargo nextest run
 cargo build
 cargo bench --no-run
 cargo deny check
@@ -226,7 +231,7 @@ Useful but secondary docs:
 Current doc and behavior alignment notes:
 
 - `README.md` now includes the verified `nextest`, benchmark, and `cargo-deny` workflows alongside the build/test commands, and notes that diffs run in the background.
-- `README.md` still documents that views are inspect-only, snapshot state is stored in `~/.patchworks/`, and the crate is not published on crates.io.
+- `README.md` now also calls out that views remain inspect-only, tracked indexes/triggers are preserved in generated SQL, stable sorted pagination uses a primary-key / `rowid` tie-breaker, and large/live-database caveats still apply.
 - `AGENTS.md` now mentions the benchmark, property-test, CI, dependency-policy workflows, and the background diff behavior.
 - There is still no real screenshot committed to the repo.
 
@@ -240,7 +245,7 @@ Config and state files that affect behavior:
 
 ## Code Review Findings
 
-Full review of every source file completed 2026-03-20. `cargo test`, `cargo nextest run`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt --all --check` pass clean after the changes in this pass.
+Full review of every source file completed 2026-03-20. `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt --all --check` pass clean after the changes in this pass. `cargo nextest run` remains valid from the previous 2026-03-20 verification baseline but was not re-run in this follow-up.
 
 ### Overall Assessment
 
@@ -261,3 +266,59 @@ The codebase is solid for a Phase 1 product. Code is well-organized, cleanly sep
 6. **`main.rs` still rewrites `-snapshot` to `--snapshot` manually.** The behavior works, but the workaround remains undocumented in the CLI definition itself.
 
 7. **WAL-mode or actively changing databases are still only best-effort.** The repo has no explicit handling or user-facing documentation for encrypted databases, active writers, or WAL consistency edge cases.
+
+### 2026-03-20 follow-up review addendum
+
+This follow-up review re-read the full repository and re-ran `cargo test` plus `cargo clippy --all-targets --all-features -- -D warnings`; both passed clean.
+
+#### Strengths
+
+- **Architecture is clean and easy to reason about.** The `db` / `diff` / `state` / `ui` split is consistent, and `src/app.rs` stays mostly as coordinator code rather than mixing persistence and rendering logic.
+- **Core diff correctness has better-than-average coverage for a Phase 1 app.** Integration tests, property tests, and SQL round-trip checks meaningfully exercise schema diffing, row diffing, rowid fallback, and export behavior.
+- **Quality gates are solid for a single-crate desktop project.** CI covers fmt, clippy, nextest, doc tests, bench compilation, and `cargo-deny`, which is a strong baseline.
+
+#### Highest-priority risks
+
+1. **Database loading is still synchronous and can block the UI on large files.** `load_left()` / `load_right()` call `inspect_database()` directly from the app thread (`src/app.rs`), and `inspect_database()` performs `COUNT(*)` for every table (`src/db/inspector.rs`). Background diffing helped, but opening a large database can still freeze the interface before the user ever clicks `Diff`.
+
+2. **Export memory use is still unbounded for large migrations.** `export_diff_as_sql()` builds one large `String`, and `append_create_and_seed()` calls `load_all_rows()` to materialize full tables before emitting inserts (`src/diff/export.rs`, `src/db/inspector.rs`). That is the biggest scalability risk in the current implementation.
+
+3. **CI is Linux-only even though the product is a desktop app with native dialogs.** `.github/workflows/ci.yml` runs on `ubuntu-latest` only. That is good for core Rust logic, but it will not catch macOS-specific `eframe` / `rfd` build or runtime regressions.
+
+4. **`SnapshotStore` still opens a fresh SQLite connection for each operation** (`src/db/snapshot.rs`). The code is simple and correct, but it is less efficient than keeping a persistent connection around.
+
+5. **WAL-mode or actively changing databases are still only best-effort.** The repo has no explicit handling or user-facing documentation for encrypted databases, active writers, or WAL consistency edge cases.
+
+#### Recommended next steps
+
+- **First:** move database inspection and table-page refresh work off the UI thread, not just diff computation.
+- **Second:** refactor SQL export toward a streaming writer / iterator so large tables do not require full row materialization plus one giant in-memory SQL blob.
+- **Third:** add regression tests for live/WAL-backed database behavior and background loading once inspection becomes asynchronous.
+- **Fourth:** add at least one macOS CI job for build smoke coverage, since that is a likely real user platform.
+- **Fifth:** consider whether `SnapshotStore` should reuse a persistent SQLite connection once the UI-thread loading work is addressed.
+
+#### Documentation note
+
+`README.md` and this handoff doc now explicitly call out that views remain inspect-only, tracked indexes/triggers are preserved in generated SQL, and large/live-database caveats still apply. The next documentation gap is around best-effort behavior for active/WAL-backed databases and other live-database edge cases.
+
+## 2026-03-20 Implementation Follow-Up
+
+### Changed
+
+- Implemented index/trigger inspection in `src/db/inspector.rs` and carried those schema objects through `DatabaseSummary` / `SchemaDiff` so export planning can see them.
+- Updated `src/diff/export.rs` so changed indexes are recreated from the right-hand database and affected triggers are recreated only after migration DML finishes.
+- Added deterministic tie-breakers for sorted pagination so duplicate sort values do not cause unstable page boundaries.
+- Added regression coverage for schema-object preservation, trigger-safe migration application, and deterministic sorted paging.
+
+### Verified
+
+- `cargo test --test diff_tests`
+- `cargo fmt --all --check`
+- `cargo test`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+
+### Remaining
+
+- Database inspection and table refresh still happen on the UI thread.
+- SQL export still builds one large in-memory string and still fully materializes seeded tables.
+- Live/WAL-backed database handling remains best-effort and still needs clearer behavioral tests/documentation.
