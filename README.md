@@ -23,6 +23,8 @@ Current limitations:
 - Rust toolchain with `cargo`
 - `rustfmt`
 - `clippy`
+- `cargo-nextest` for the preferred local test runner
+- `cargo-deny` for dependency policy checks
 - A desktop session if you want to launch the GUI
 
 `rusqlite` is built with the `bundled` feature, so a system SQLite library is not required.
@@ -34,9 +36,18 @@ These commands were re-verified on 2026-03-20 in `/Users/sawyer/github/patchwork
 ```bash
 cargo build
 cargo test
+cargo nextest run
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
+cargo bench --no-run
+cargo deny check
 cargo run -- --help
+```
+
+Benchmarks can then be executed locally with:
+
+```bash
+cargo bench
 ```
 
 Launch and snapshot examples:
@@ -72,6 +83,9 @@ Patchworks creates a local store in your home directory:
 - `src/diff/`: schema diff, row diff, and SQL export logic
 - `src/ui/`: `egui` rendering layer
 - `tests/`: integration tests and SQLite fixtures
+- `benches/`: Criterion benchmarks for query and diff hot paths
+- `.github/workflows/ci.yml`: GitHub Actions CI
+- `deny.toml`: `cargo-deny` dependency policy
 - `BUILD.md`: living build and handoff document for future passes
 
 ## License

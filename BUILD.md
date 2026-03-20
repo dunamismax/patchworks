@@ -7,25 +7,19 @@
 - Verified on: 2026-03-20
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
-- Base commit at start of this pass: `5b5edf7ca32506e10cba798c60a85683ab1ba4c1`
+- Base commit at start of this pass: `704e06ab2c0f0793ea8a700c5286bf212cb3d6e2`
 - Host used for verification: macOS arm64 (`Darwin 25.4.0`)
 - Last full code review: 2026-03-20
 - This verification was performed against the working tree rooted at the commit above before the changes from this pass were committed.
 
 ## Completed In This Pass
 
-- Reduced repeated schema inspection during table pagination by adding `read_table_page_for_table()` and switching the app to use already-loaded `TableInfo` values from pane summaries.
-- Hardened `count_rows()` so negative row counts from corrupted SQLite state now raise an error instead of wrapping into a huge `u64`.
-- Hardened SQL export key handling so missing primary-key columns or values now return an explicit error instead of silently using column index `0`.
-- Updated row-diff comparison to use `compare_sql_values()` for equality checks, which treats numerically equal floating-point values like `-0.0` and `0.0` as unchanged.
-- Renamed the misleading diff display mode label from "Side-by-side" to "Grid" to match the actual rendering.
-- Removed the unnecessary `Clone` derive from `WorkspaceState`.
-- Removed the unused left-path argument from `export_diff_as_sql()`.
-- Extracted the duplicated fixture parser and SQLite test database helpers into `tests/support/mod.rs`.
-- Added regression coverage for:
-  - missing-primary-key export failures (`src/diff/export.rs` unit test)
-  - floating-point equality in row diffs (`tests/diff_tests.rs`)
-- Re-ran the verified build, test, lint, help, and CLI snapshot smoke workflows.
+- Added Criterion benchmarks for the main diff and query hot paths in `benches/diff_hot_paths.rs` and `benches/query_hot_paths.rs`.
+- Added `proptest`-backed invariant coverage in `tests/proptest_invariants.rs` for schema diff classification, row-diff accounting, and SQL patch generation round-trips.
+- Added checked-in dependency policy via `deny.toml` for `cargo-deny`, including the font licenses required by `egui`'s bundled font crate.
+- Added GitHub Actions CI in `.github/workflows/ci.yml` for format, clippy, nextest, doc-test, bench-compile, and dependency-policy checks.
+- Updated `Cargo.toml` dev dependencies and bench targets for `criterion` and `proptest`.
+- Reviewed and updated `README.md`, `AGENTS.md`, and this file so the documented workflows match the commands verified in this pass.
 
 ## Project Baseline
 
@@ -47,7 +41,7 @@ What it does not currently do:
 - It does not provide headless CLI subcommands for diffing, inspection, SQL export, snapshot listing, or snapshot cleanup.
 - It does not diff or export views; views are inspected and listed only.
 - It does not include packaging, installer, or release automation in this repo.
-- It does not include CI config, Docker, migrations, or environment-file driven setup.
+- It does not include Docker, migrations, or environment-file driven setup.
 
 ## Major Components And Entry Points
 
@@ -79,9 +73,18 @@ What it does not currently do:
 - `tests/`
   Integration and unit tests. These are the best executable specification of current behavior.
   - `tests/diff_tests.rs`
+  - `tests/proptest_invariants.rs`
   - `tests/snapshot_tests.rs`
   - `tests/support/mod.rs`
   - `tests/fixtures/create_fixtures.sql`
+- `benches/`
+  Criterion benchmarks for the main diff and query hot paths.
+  - `benches/diff_hot_paths.rs`
+  - `benches/query_hot_paths.rs`
+- `.github/workflows/ci.yml`
+  GitHub Actions CI entrypoint for format, lint, test, benchmark compile, and dependency-policy checks.
+- `deny.toml`
+  `cargo-deny` configuration for advisories, source policy, allowed licenses, and duplicate-version warnings.
 
 ## Current Implemented State
 
@@ -109,6 +112,11 @@ The implemented system is cohesive, lightweight, and intentionally narrow in sco
   - Unchanged-schema tables get incremental `DELETE`/`INSERT`/`UPDATE` statements.
   - Rowid-fallback deletes use the stored row identity instead of guessing from the first visible column.
   - Missing primary-key columns or row values during export are now treated as an explicit invalid state.
+- Quality workflow behavior:
+  - Benchmarks now exist for paged table reads, isolated row diffs, and end-to-end diff generation.
+  - Property tests now exercise schema diff invariants, row-diff accounting invariants, and SQL export round-tripping.
+  - The repo now includes GitHub Actions CI and a checked-in `cargo-deny` policy.
+  - `cargo nextest run` is the preferred fast local test command; `cargo nextest run --all-targets` also discovers the Criterion bench binaries and is slower than needed for routine CI.
 - UI behavior:
   - Starting the app with two database paths computes a diff automatically.
   - Opening a right-side database from the toolbar loads it, but the user must click `Diff`.
@@ -126,6 +134,8 @@ The implemented system is cohesive, lightweight, and intentionally narrow in sco
 - Rust toolchain with `cargo`
 - `rustfmt`
 - `clippy`
+- `cargo-nextest` for the fast local/CI test runner
+- `cargo-deny` for dependency policy checks
 - A desktop environment if you want to launch the GUI
 
 Notes:
@@ -140,9 +150,12 @@ The following commands were run successfully in `/Users/sawyer/github/patchworks
 
 ```bash
 cargo build
+cargo fmt --all --check
+cargo clippy --all-targets --all-features -- -D warnings
 cargo test
-cargo fmt
-cargo clippy --all-targets -- -D warnings
+cargo nextest run
+cargo bench --no-run
+cargo deny check
 cargo run -- --help
 ```
 
@@ -200,12 +213,18 @@ Authoritative files:
   Operational source of truth for how the UI loads databases, computes diffs, refreshes visible tables, and saves snapshots.
 - `src/db/*.rs` and `src/diff/*.rs`
   Source of truth for inspection, diffing, snapshot storage, and SQL export behavior.
-- `tests/diff_tests.rs` and `tests/snapshot_tests.rs`
+- `tests/diff_tests.rs`, `tests/proptest_invariants.rs`, and `tests/snapshot_tests.rs`
   Best executable specification of current expected behavior.
 - `tests/support/mod.rs`
   Shared integration-test helpers for fixtures and temporary SQLite databases.
 - `tests/fixtures/create_fixtures.sql`
   Canonical test data for schema diff, data diff, rowid fallback, SQL export, and snapshot tests.
+- `benches/*.rs`
+  Source of truth for the currently tracked diff and query hot-path benchmarks.
+- `.github/workflows/ci.yml`
+  Source of truth for the checked-in CI workflow.
+- `deny.toml`
+  Source of truth for dependency-policy expectations.
 
 Useful but secondary docs:
 
@@ -216,19 +235,22 @@ Useful but secondary docs:
 
 Current doc and behavior alignment notes:
 
-- `README.md` still matches the verified local workflow and says the crate is not published on crates.io.
-- `README.md` documents that views are inspect-only and snapshot state is stored in `~/.patchworks/`.
+- `README.md` now includes the verified `nextest`, benchmark, and `cargo-deny` workflows alongside the build/test commands.
+- `README.md` still documents that views are inspect-only, snapshot state is stored in `~/.patchworks/`, and the crate is not published on crates.io.
+- `AGENTS.md` now mentions the benchmark, property-test, CI, and dependency-policy workflows.
 - There is still no real screenshot committed to the repo.
 
 Config and state files that affect behavior:
 
 - There is no checked-in runtime config file.
+- GitHub Actions CI now lives in `.github/workflows/ci.yml`.
+- Dependency policy is configured in `deny.toml`.
 - User-local snapshot state lives outside the repo in `~/.patchworks/`.
 - Build output goes to `target/`.
 
 ## Code Review Findings
 
-Full review of every source file completed 2026-03-20. Build, test, clippy, and fmt all pass clean after the changes in this pass.
+Full review of every source file completed 2026-03-20. Build, test, nextest, clippy, fmt, bench compile, and `cargo-deny` all pass clean after the changes in this pass.
 
 ### Overall Assessment
 

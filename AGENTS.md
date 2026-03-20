@@ -8,7 +8,7 @@ This file is the secondary agent-oriented project memory for Patchworks. `BUILD.
 
 - Name: Patchworks
 - Tagline: Git-style visual diffs for SQLite databases
-- Stack: Rust 2021, egui/eframe, rusqlite, serde, clap, tracing
+- Stack: Rust 2021, egui/eframe, rusqlite, serde, clap, tracing, criterion, proptest
 
 ## Product Scope
 
@@ -25,6 +25,9 @@ This file is the secondary agent-oriented project memory for Patchworks. `BUILD.
 - `src/state` holds UI-facing workspace state.
 - `src/ui` renders panels and views without owning persistence.
 - `src/app.rs` coordinates UI events with backend modules and the workspace state.
+- `benches/` holds Criterion coverage for the main query and diff hot paths.
+- `.github/workflows/ci.yml` is the checked-in CI entrypoint.
+- `deny.toml` is the source of truth for dependency policy and allowed licenses.
 
 ## Current Conventions
 
@@ -44,16 +47,23 @@ This file is the secondary agent-oriented project memory for Patchworks. `BUILD.
 - Snapshot storage copies databases into `~/.patchworks/snapshots/` and tracks metadata in `~/.patchworks/patchworks.db`.
 - The egui app shell includes file loading, table browsing, diff views, schema diff, snapshots, and SQL export preview.
 - CLI modes support empty launch, one-file inspect, two-file diff, and snapshot creation.
+- Criterion benchmarks now cover paged table reads, row-diff streaming, and end-to-end diff generation.
+- Proptest coverage now checks schema classification invariants, row-diff accounting invariants, and SQL export round-trips.
+- The repo now includes GitHub Actions CI plus `cargo-deny` dependency policy checks.
 
 ## Verification Snapshot
 
-- `cargo fmt --check`
-- `cargo clippy --all-targets -- -D warnings`
+- `cargo fmt --all --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo test`
+- `cargo nextest run`
+- `cargo bench --no-run`
+- `cargo deny check`
 
 ## Known Caveats
 
 - SQL export currently prioritizes correctness over minimality, so modified schemas are rebuilt from the right-hand database definition.
 - The diff UI is functional but intentionally lightweight and can be refined further.
 - Snapshot storage currently uses `~/.patchworks`.
-- `BUILD.md` currently tracks at least one concrete SQL export risk around rowid-fallback deletes; read it before touching export logic.
+- `cargo bench --no-run` is slower than the rest of the local checks because the bundled SQLite C source is compiled in release mode for the bench profile.
+- `BUILD.md` is still the primary operational handoff and should be read before touching export logic or verification workflows.
