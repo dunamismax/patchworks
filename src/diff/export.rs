@@ -102,11 +102,16 @@ fn append_incremental_changes(table: &TableInfo, data_diff: &TableDataDiff, sql:
         table.primary_key.clone()
     };
 
-    for row in &data_diff.removed_rows {
+    for (index, row) in data_diff.removed_rows.iter().enumerate() {
+        let key = if table.primary_key.is_empty() {
+            data_diff.removed_row_keys.get(index).unwrap_or(row)
+        } else {
+            row
+        };
         sql.push(format!(
             "DELETE FROM {} WHERE {};",
             quote_identifier(&table.name),
-            where_clause(&data_diff.columns, row, &primary_key)
+            where_clause(&data_diff.columns, key, &primary_key)
         ));
     }
 

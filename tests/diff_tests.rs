@@ -150,6 +150,34 @@ fn sql_export_recreates_target_state() {
 }
 
 #[test]
+fn sql_export_uses_rowid_for_removed_rows_without_primary_key() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db(&temp_dir, "rowid-export-left.sqlite", "rowid_export_left");
+    let right_path = create_db(&temp_dir, "rowid-export-right.sqlite", "rowid_export_right");
+    let generated_path = temp_dir.path().join("rowid-export-generated.sqlite");
+
+    std::fs::copy(&left_path, &generated_path).expect("copy left db");
+    let diff = diff_databases(&left_path, &right_path).expect("compute diff");
+    assert!(
+        diff.sql_export
+            .contains("DELETE FROM \"notes\" WHERE rowid = 20;"),
+        "expected rowid delete in exported SQL, got:\n{}",
+        diff.sql_export
+    );
+
+    let generated = Connection::open(&generated_path).expect("open generated db");
+    generated
+        .execute_batch(&diff.sql_export)
+        .expect("apply exported sql");
+
+    let generated_notes =
+        read_table_page(&generated_path, "notes", &TableQuery::default()).expect("generated notes");
+    let right_notes =
+        read_table_page(&right_path, "notes", &TableQuery::default()).expect("right notes");
+    assert_eq!(generated_notes.rows, right_notes.rows);
+}
+
+#[test]
 fn snapshot_store_can_prepare_paths_for_diff_workflows() {
     let temp_dir = TempDir::new().expect("temp dir");
     let db_path = create_db(&temp_dir, "snapshot.sqlite", "snapshot_source");

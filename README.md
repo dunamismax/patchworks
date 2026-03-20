@@ -1,45 +1,79 @@
 # Patchworks
 
-> ⚠️ Work in Progress
+Patchworks is a Rust desktop app for inspecting and diffing SQLite databases. It can open zero, one, or two database files, show schema and row-level changes, save snapshots, and generate SQL intended to transform the left database into the right database.
 
-Git-style visual diffs for SQLite databases.
+## Current Scope
 
-Patchworks is a desktop tool for opening two SQLite databases and seeing exactly what changed between them. It focuses on schema changes, row-by-row data diffs, snapshot history, and SQL export, all inside a Rust-native application with an egui interface and a CLI entrypoint for common workflows.
+- Inspect SQLite tables and views in a native `egui` desktop UI
+- Browse table rows with pagination and sortable columns
+- Diff two databases at schema level and row level
+- Save snapshots of a live database and compare against them later
+- Preview SQL export in the UI, copy it to the clipboard, or save it to disk
+- Create a snapshot from the CLI with `patchworks --snapshot <db>`
 
-## Features
+Current limitations:
 
-- Open one SQLite database for inspection
-- Open two SQLite databases and compute schema and data diffs
-- Browse tables with paging and sortable columns
-- Save named snapshots of database state
-- Compare a live database against a saved snapshot
-- Export diffs as SQL migration scripts
-- Run as a single Rust binary with no external SQLite dependency
+- Views are inspect-only in the current phase; they are not diffed or exported.
+- There is no headless CLI for `diff`, `inspect`, or SQL export yet.
+- Snapshot state is stored under `~/.patchworks/`.
+- The crate is not published on crates.io yet.
 
-## Screenshot
+## Requirements
 
-![Patchworks screenshot placeholder](https://placehold.co/1200x700?text=Patchworks+Screenshot+Coming+Soon)
+- Rust toolchain with `cargo`
+- `rustfmt`
+- `clippy`
+- A desktop session if you want to launch the GUI
 
-## Installation
+`rusqlite` is built with the `bundled` feature, so a system SQLite library is not required.
+
+## Verified Local Workflow
+
+These commands were re-verified on 2026-03-20 in `/Users/sawyer/github/patchworks`:
 
 ```bash
-cargo install patchworks
+cargo build
+cargo test
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo run -- --help
 ```
 
-## Usage
+Launch and snapshot examples:
 
 ```bash
-patchworks
-patchworks app.db
-patchworks before.db after.db
-patchworks --snapshot app.db
+cargo run
+cargo run -- app.db
+cargo run -- left.db right.db
+cargo run -- --snapshot app.db
 ```
 
-## Roadmap
+Patchworks is not currently available via `cargo install patchworks` from crates.io.
 
-- SQLite session extension support for live changeset recording
-- Branch-like snapshot trees
-- Conflict resolution UI for merging diverged databases
-- Row-level undo and redo
-- Column-level type migration suggestions
-- Database health checks for integrity, WAL state, and freelist analysis
+## Snapshot Storage
+
+Patchworks creates a local store in your home directory:
+
+- Metadata database: `~/.patchworks/patchworks.db`
+- Snapshot database copies: `~/.patchworks/snapshots/<uuid>.sqlite`
+
+## Behavior Notes
+
+- Starting the app with two database paths computes a diff on launch.
+- Opening a right-side database from the toolbar loads it, but you still need to click `Diff`.
+- Row diffs are only computed for tables that exist on both sides.
+- SQL export favors correctness over minimal migrations when a table schema changes.
+
+## Repository Layout
+
+- `src/main.rs`: CLI entrypoint and desktop startup
+- `src/app.rs`: app coordinator and workspace actions
+- `src/db/`: inspection, diff orchestration, snapshots, and shared types
+- `src/diff/`: schema diff, row diff, and SQL export logic
+- `src/ui/`: `egui` rendering layer
+- `tests/`: integration tests and SQLite fixtures
+- `BUILD.md`: living build and handoff document for future passes
+
+## License
+
+MIT. See [LICENSE](/Users/sawyer/github/patchworks/LICENSE).

@@ -7,12 +7,23 @@
 - Verified on: 2026-03-20
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
-- Commit: `720e849311b2b034cdaefa10c6b14b6927c12018`
+- Commit: `c491702cf51e93f0ad9030caaf68f80a75088dbf`
 - Host used for verification: macOS arm64 (`Darwin 25.4.0`)
+- Verification in this file covers the current working tree on top of the commit above. Local changes from this pass are not committed yet.
+
+## Completed In This Pass
+
+- Fixed the SQL export bug for rowid-fallback deletes on tables without a shared primary key.
+- Added regression coverage for that path in `tests/diff_tests.rs` with dedicated fixtures in `tests/fixtures/create_fixtures.sql`.
+- Rewrote `README.md` so installation, usage, limitations, and snapshot storage match the code.
+- Re-verified MIT licensing state:
+  - `Cargo.toml` declares `license = "MIT"`.
+  - `LICENSE` contains the MIT license text.
+- Re-ran the verified build, test, lint, help, and snapshot smoke workflows.
 
 ## Project Baseline
 
-Patchworks is a single-crate Rust desktop application for inspecting and diffing SQLite databases. The current product is a Phase 1 egui/eframe desktop app with a small CLI wrapper.
+Patchworks is a single-crate Rust desktop application for inspecting and diffing SQLite databases. The current product is a Phase 1 `egui`/`eframe` desktop app with a small CLI wrapper.
 
 What it currently does:
 
@@ -23,21 +34,21 @@ What it currently does:
 - Save snapshots of a database into a local Patchworks store under `~/.patchworks/`.
 - Compare a live database against a saved snapshot.
 - Generate SQL intended to transform the left database into the right database.
-- Preview SQL in the UI, copy it to clipboard, or save it to disk.
+- Preview SQL in the UI, copy it to the clipboard, or save it to disk.
 
 What it does not currently do:
 
-- It does not provide a headless CLI subcommand for diffing or SQL export.
+- It does not provide headless CLI subcommands for diffing, inspection, SQL export, snapshot listing, or snapshot cleanup.
 - It does not diff or export views; views are inspected and listed only.
 - It does not include packaging, installer, or release automation in this repo.
-- It does not include migrations, seed scripts, Docker, CI config, or environment-file driven setup.
+- It does not include CI config, Docker, migrations, or environment-file driven setup.
 
 ## Major Components And Entry Points
 
 - `Cargo.toml`
   Single Rust package manifest and dependency source of truth.
 - `src/main.rs`
-  Binary entrypoint. Parses CLI args, supports `--snapshot`, otherwise launches the egui app.
+  Binary entrypoint. Parses CLI args, supports `--snapshot`, otherwise launches the `egui` app.
 - `src/lib.rs`
   Re-exports the crate modules.
 - `src/app.rs`
@@ -56,7 +67,7 @@ What it does not currently do:
 - `src/state/`
   UI state containers for panes, diff mode, selected tables, and active view.
 - `src/ui/`
-  egui rendering layer for file panels, table views, schema diff, row diff, snapshots, SQL export, and file dialogs.
+  `egui` rendering layer for file panels, table views, schema diff, row diff, snapshots, and SQL export.
 - `tests/`
   Integration tests. These are the best executable specification of current behavior.
   - `tests/diff_tests.rs`
@@ -65,7 +76,7 @@ What it does not currently do:
 
 ## Current Implemented State
 
-The implemented system is cohesive and passes its current automated checks, but it is still lightweight and intentionally narrow in scope.
+The implemented system is cohesive, lightweight, and intentionally narrow in scope.
 
 - CLI surface today:
   - `patchworks`
@@ -86,10 +97,12 @@ The implemented system is cohesive and passes its current automated checks, but 
   - Removed tables are dropped.
   - Modified tables are rebuilt from the right-side schema and reseeded from the right database.
   - Unchanged-schema tables get incremental `DELETE`/`INSERT`/`UPDATE` statements.
+  - Rowid-fallback deletes now use the actual stored row identity instead of guessing from the first visible column.
 - UI behavior:
-  - Opening a right-side database from startup computes a diff automatically.
+  - Starting the app with two database paths computes a diff automatically.
   - Opening a right-side database from the toolbar loads it, but the user must click `Diff`.
   - SQL export can be copied to the clipboard or saved through a native save dialog.
+  - Views are listed in the side panel, but remain inspect-only.
 
 ## Verified Build And Run Workflow
 
@@ -118,24 +131,31 @@ cargo clippy --all-targets -- -D warnings
 cargo run -- --help
 ```
 
+Observed `cargo run -- --help` output:
+
+- Usage: `patchworks [OPTIONS] [FILES]...`
+- Files: zero, one, or two database files to open in the UI
+- Supported option: `--snapshot <SNAPSHOT>`
+
 Verified CLI snapshot smoke test:
 
 ```bash
-tmp_db=/tmp/patchworks-cli-smoke2-$$.sqlite
+tmp_db="/tmp/patchworks-cli-smoke-$RANDOM.sqlite"
 rm -f "$tmp_db"
 sqlite3 "$tmp_db" "CREATE TABLE demo (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO demo (name) VALUES ('sample');"
 cargo run -- --snapshot "$tmp_db"
+rm -f "$tmp_db"
 ```
 
-Observed result of the smoke test:
+Observed result of the snapshot smoke test:
 
 - `cargo run -- --snapshot ...` completed successfully.
 - The command created the default Patchworks store under `~/.patchworks/`.
-- I cleaned up the temporary smoke-test snapshot rows and copied databases after verification.
+- I cleaned up the temporary snapshot metadata row and copied database after verification.
 
 ### Unverified But Likely Commands
 
-These commands are supported by the code, but I did not fully verify the GUI interaction path in this review session:
+These commands are supported by the code, but I did not fully verify the GUI interaction path in this session:
 
 ```bash
 cargo run
@@ -143,17 +163,15 @@ cargo run -- path/to/database.sqlite
 cargo run -- left.sqlite right.sqlite
 ```
 
-Likely local install command:
+Likely local install command, still unverified in this pass:
 
 ```bash
 cargo install --path .
 ```
 
-Important doc correction:
+Important packaging note:
 
-- `README.md` currently says `cargo install patchworks`.
-- On 2026-03-20, `cargo info --registry crates-io patchworks` failed with `could not find patchworks in registry`.
-- Treat the README installation command as stale/wrong until someone publishes the crate and re-verifies it.
+- `cargo install patchworks` from crates.io is not valid as of 2026-03-20 because the crate is not published there.
 
 ## Source-Of-Truth Notes
 
@@ -175,16 +193,15 @@ Authoritative files:
 Useful but secondary docs:
 
 - `README.md`
-  Good high-level product description, but not reliable for install instructions.
+  High-level product description and local workflow guide. Keep it aligned with verified commands and current scope.
 - `AGENTS.md`
-  Secondary agent memory for Codex sessions. Useful for architecture/convention notes, but it is not the primary operational handoff.
+  Secondary agent memory for Codex sessions. Useful for architecture and conventions, but it does not replace direct verification.
 
-Areas where docs or behavior diverge:
+Current doc and behavior alignment notes:
 
-- `README.md` installation instructions are stale/wrong for the current state of distribution.
-- `README.md` screenshot is still a placeholder.
-- `README.md` roadmap is aspirational, not implementation proof.
-- `AGENTS.md` is secondary to `BUILD.md` and should stay aligned with it, but it does not replace direct verification.
+- `README.md` now matches the verified local workflow and explicitly says the crate is not published on crates.io.
+- `README.md` now documents that views are inspect-only and snapshot state is stored in `~/.patchworks/`.
+- There is still no real screenshot committed to the repo.
 
 Config and state files that affect behavior:
 
@@ -194,61 +211,54 @@ Config and state files that affect behavior:
 
 ## Current Gaps And Known Issues
 
-Concrete issues and risks found by inspection:
+Concrete issues and risks still present:
 
-- SQL export appears incorrect for removed rows when a table has no shared primary key and diffing falls back to `rowid`.
-  - In `src/diff/data.rs`, rowid fallback stores synthetic row identity in `RowModification.primary_key`, but `removed_rows` only store display/data columns.
-  - In `src/diff/export.rs`, `where_clause()` uses `row[0]` as `rowid` for delete statements when `primary_key == ["rowid"]`.
-  - That means deletes for rowid-fallback tables can target the first shared column value instead of the actual rowid.
-  - This path is not covered by the existing SQL export test.
-- Views are inspected (`DatabaseSummary.views`) and listed in the side panel, but there is no view diff model and no SQL export support for views.
+- Views are inspected (`DatabaseSummary.views`) and listed in the UI, but there is no view diff model and no SQL export support for views.
 - GUI behavior is only partially automated:
   - There are no UI tests.
   - File dialog behavior is untested.
-  - Clipboard/save actions are untested.
-- The CLI is thin:
+  - Clipboard and save actions are untested.
+- The CLI is still thin:
   - No headless `diff`, `inspect`, `export`, `list-snapshots`, or `prune-snapshots` commands exist.
   - Automation currently has to use the library or the GUI.
 - Snapshot storage always uses `~/.patchworks` via `directories::BaseDirs`, not XDG-style config/data directories.
 - Modified-schema SQL export is correctness-first, not minimal. It rebuilds modified tables instead of generating the smallest possible migration.
-- Row diffs only exist for shared tables. Added/removed tables only appear in schema diff.
+- Row diffs only exist for shared tables. Added and removed tables only appear in schema diff.
 - There is no release, packaging, or CI definition in the repository.
-- There are no repo-local migration or seeding workflows outside the test fixtures.
 
 Test coverage gaps:
 
-- No regression test covers SQL export on a no-primary-key table with rowid fallback.
 - No test covers view handling because views are not part of the current diff/export surface.
 - No end-to-end GUI smoke test exists.
+- There is no coverage for clipboard or native file-dialog integration.
 
 ## Next-Pass Priorities
 
 ### Highest Impact
 
-1. Fix the rowid-fallback SQL export bug and add a regression test in `tests/diff_tests.rs`.
-2. Update `README.md` so installation and usage instructions match reality, then keep `BUILD.md` and `README.md` aligned.
-3. Decide whether views are in scope for Phase 1.5/2. Either implement view diff/export support or document clearly that views are inspect-only.
+1. Add headless CLI subcommands for inspect, diff, and SQL export so Patchworks is useful in automation and CI.
+2. Add snapshot listing and cleanup/pruning commands.
+3. Add UI smoke coverage or a scripted manual desktop verification workflow.
+4. Decide whether view diff/export moves into scope for the next phase; if so, design the model and tests instead of leaving views inspect-only.
 
 ### Quick Wins
 
-1. Add a dedicated integration test for SQL export when diffing tables without primary keys.
-2. Replace `README.md`'s `cargo install patchworks` with a verified local workflow.
-3. Add a short note in `README.md` or `BUILD.md` that snapshot state is written to `~/.patchworks/`.
-4. Add a manual QA section for the GUI flow once someone verifies the full desktop interaction path.
+1. Add a manual QA section for the GUI flow once someone verifies the full desktop interaction path.
+2. Add a real screenshot to `README.md` after verifying a stable UI capture.
+3. Consider a store-path override for snapshots to improve automation and test ergonomics.
 
 ### Deeper Follow-Up Work
 
-1. Add headless CLI subcommands for inspect/diff/export so Patchworks is useful in automation and CI.
-2. Add snapshot listing and cleanup/pruning commands.
-3. Add UI smoke coverage or scripted desktop verification.
-4. Revisit SQL export minimality and dependency handling for more complex schema changes.
+1. Revisit SQL export minimality and dependency handling for more complex schema changes.
+2. Evaluate platform-native data-directory behavior instead of always using `~/.patchworks`.
+3. Decide whether no-primary-key diff/export flows need stronger user-facing warnings in the UI.
 
 ## Next-Agent Checklist
 
 Follow this in order after opening the repo:
 
 1. Read this file first.
-2. Confirm you are on the expected commit/branch or note the new baseline here.
+2. Confirm you are on the expected branch and note any new commit baseline here.
 3. Read `Cargo.toml`, `src/main.rs`, `src/app.rs`, `tests/diff_tests.rs`, and `tests/fixtures/create_fixtures.sql`.
 4. Run the verified commands:
 
@@ -261,7 +271,7 @@ Follow this in order after opening the repo:
    ```
 
 5. If you plan to touch snapshots, inspect and be aware of user-local state in `~/.patchworks/`.
-6. If you plan to touch SQL export, start by reproducing the rowid-fallback gap with a failing test before editing implementation.
+6. If you plan to touch SQL export, start by running `cargo test sql_export_uses_rowid_for_removed_rows_without_primary_key`.
 7. If you plan to touch the GUI, verify manually whether `cargo run -- left.sqlite right.sqlite` opens and behaves as expected on your desktop session.
 8. Update `BUILD.md` after any successful verification, bug discovery, workflow change, or doc correction.
 
@@ -269,6 +279,6 @@ Follow this in order after opening the repo:
 
 Safest first changes for a new contributor:
 
-- Add the missing SQL export regression test for rowid fallback.
-- Correct the stale install instructions in `README.md`.
-- Add explicit documentation for snapshot store side effects and locations.
+- Add headless CLI subcommands for inspect/diff/export.
+- Add snapshot list and prune workflows.
+- Add manual QA notes or scripted smoke coverage for the current GUI path.

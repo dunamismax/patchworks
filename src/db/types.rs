@@ -162,6 +162,8 @@ pub struct TableDataDiff {
     pub added_rows: Vec<Vec<SqlValue>>,
     /// Left-side rows not found on the right side.
     pub removed_rows: Vec<Vec<SqlValue>>,
+    /// Identity values for removed rows, aligned by index with `removed_rows`.
+    pub removed_row_keys: Vec<Vec<SqlValue>>,
     /// Rows with matching identity but different cell values.
     pub modified_rows: Vec<RowModification>,
     /// Aggregate diff statistics.

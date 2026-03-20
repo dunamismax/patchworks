@@ -88,6 +88,25 @@ INSERT INTO notes (body, archived) VALUES
     ('publish', 1),
     ('new note', 0);
 
+-- @fixture rowid_export_left
+CREATE TABLE notes (
+    body TEXT,
+    archived INTEGER
+);
+
+INSERT INTO notes (rowid, body, archived) VALUES
+    (10, 'keep', 0),
+    (20, 'remove me', 1);
+
+-- @fixture rowid_export_right
+CREATE TABLE notes (
+    body TEXT,
+    archived INTEGER
+);
+
+INSERT INTO notes (rowid, body, archived) VALUES
+    (10, 'keep', 0);
+
 -- @fixture snapshot_source
 CREATE TABLE projects (
     id INTEGER PRIMARY KEY,

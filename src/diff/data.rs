@@ -120,6 +120,7 @@ pub fn diff_table(
 
     let mut added_rows = Vec::new();
     let mut removed_rows = Vec::new();
+    let mut removed_row_keys = Vec::new();
     let mut modified_rows = Vec::new();
     let mut stats = DiffStats {
         total_rows_left: left_table.row_count,
@@ -133,6 +134,7 @@ pub fn diff_table(
                 match compare_value_slices(&left_row.pk_values, &right_row.pk_values) {
                     Ordering::Less => {
                         removed_rows.push(left_row.row_values.clone());
+                        removed_row_keys.push(left_row.pk_values.clone());
                         stats.removed += 1;
                         left_current = next_stream_row(
                             &mut left_rows,
@@ -194,6 +196,7 @@ pub fn diff_table(
             }
             (Some(left_row), None) => {
                 removed_rows.push(left_row.row_values.clone());
+                removed_row_keys.push(left_row.pk_values.clone());
                 stats.removed += 1;
                 left_current = next_stream_row(
                     &mut left_rows,
@@ -221,6 +224,7 @@ pub fn diff_table(
         columns: comparison_columns,
         added_rows,
         removed_rows,
+        removed_row_keys,
         modified_rows,
         stats,
         warnings,
