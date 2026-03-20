@@ -1,14 +1,28 @@
 //! Row diff rendering.
 
-use egui::{Color32, Grid, RichText, ScrollArea, Ui};
+use egui::{Color32, Grid, RichText, ScrollArea, Spinner, Ui};
 
 use crate::db::types::TableDataDiff;
 use crate::state::workspace::{DiffDisplayMode, DiffState};
 
 /// Renders row-level diff results.
 pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
+    if diff_state.is_computing {
+        ui.horizontal(|ui| {
+            ui.add(Spinner::new());
+            ui.label("Computing database diff in the background...");
+        });
+        ui.separator();
+    }
+
+    if let Some(error) = &diff_state.error {
+        ui.colored_label(Color32::RED, error);
+    }
+
     let Some(result) = &diff_state.result else {
-        ui.label("Load two databases and run a diff to see changes.");
+        if !diff_state.is_computing {
+            ui.label("Load two databases and run a diff to see changes.");
+        }
         return;
     };
 
@@ -20,10 +34,6 @@ pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
             "Unified",
         );
     });
-
-    if let Some(error) = &diff_state.error {
-        ui.colored_label(Color32::RED, error);
-    }
 
     ui.separator();
     ui.horizontal_wrapped(|ui| {

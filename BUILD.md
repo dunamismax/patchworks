@@ -7,19 +7,18 @@
 - Verified on: 2026-03-20
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
-- Base commit at start of this pass: `704e06ab2c0f0793ea8a700c5286bf212cb3d6e2`
+- Base commit at start of this pass: `5665809ede41325d8c375e874a761047949de56f`
 - Host used for verification: macOS arm64 (`Darwin 25.4.0`)
 - Last full code review: 2026-03-20
 - This verification was performed against the working tree rooted at the commit above before the changes from this pass were committed.
 
 ## Completed In This Pass
 
-- Added Criterion benchmarks for the main diff and query hot paths in `benches/diff_hot_paths.rs` and `benches/query_hot_paths.rs`.
-- Added `proptest`-backed invariant coverage in `tests/proptest_invariants.rs` for schema diff classification, row-diff accounting, and SQL patch generation round-trips.
-- Added checked-in dependency policy via `deny.toml` for `cargo-deny`, including the font licenses required by `egui`'s bundled font crate.
-- Added GitHub Actions CI in `.github/workflows/ci.yml` for format, clippy, nextest, doc-test, bench-compile, and dependency-policy checks.
-- Updated `Cargo.toml` dev dependencies and bench targets for `criterion` and `proptest`.
-- Reviewed and updated `README.md`, `AGENTS.md`, and this file so the documented workflows match the commands verified in this pass.
+- Moved diff execution off the main `egui` thread in `src/app.rs` by dispatching `diff_databases()` work onto a background worker and polling the result during `update()`.
+- Added explicit in-progress diff state in `src/state/workspace.rs` and visible loading feedback in `src/ui/diff_view.rs` plus the toolbar.
+- Cleared stale diff results whenever a new left/right database is loaded so completed background work cannot overwrite a newly selected comparison target.
+- Added focused unit tests in `src/app.rs` for successful background diff completion and in-flight diff cancellation when the loaded database changes.
+- Updated `README.md`, `AGENTS.md`, and this file so the documented behavior reflects background diff execution and the commands re-verified in this pass.
 
 ## Project Baseline
 
@@ -77,6 +76,7 @@ What it does not currently do:
   - `tests/snapshot_tests.rs`
   - `tests/support/mod.rs`
   - `tests/fixtures/create_fixtures.sql`
+  - `src/app.rs` also now includes focused unit tests for background diff task coordination.
 - `benches/`
   Criterion benchmarks for the main diff and query hot paths.
   - `benches/diff_hot_paths.rs`
@@ -105,6 +105,7 @@ The implemented system is cohesive, lightweight, and intentionally narrow in sco
   - Row diff prefers a shared primary key and falls back to `rowid` with warnings.
   - Large-table warning threshold is `100_000` rows.
   - Equality for row diffs now follows `compare_sql_values()` rather than `SqlValue`'s derived `PartialEq`.
+  - Diff requests now run on a background thread and are applied back into the workspace on the next UI update tick.
 - SQL export behavior:
   - Added tables are created and fully seeded from the right database.
   - Removed tables are dropped.
@@ -118,7 +119,9 @@ The implemented system is cohesive, lightweight, and intentionally narrow in sco
   - The repo now includes GitHub Actions CI and a checked-in `cargo-deny` policy.
   - `cargo nextest run` is the preferred fast local test command; `cargo nextest run --all-targets` also discovers the Criterion bench binaries and is slower than needed for routine CI.
 - UI behavior:
-  - Starting the app with two database paths computes a diff automatically.
+  - Starting the app with two database paths queues a diff automatically without blocking the UI thread.
+  - Toolbar-initiated diffs now run in the background and show a spinner while work is in flight.
+  - Loading a new left-side or right-side database clears any prior diff result and drops the receiver for an older in-flight diff task.
   - Opening a right-side database from the toolbar loads it, but the user must click `Diff`.
   - The tabular diff display mode is now labeled `Grid`, which matches the current rendering.
   - SQL export can be copied to the clipboard or saved through a native save dialog.
@@ -144,42 +147,27 @@ Notes:
 - `rusqlite` is built with `bundled`, so a system SQLite library is not required for the app build.
 - `sqlite3` was only used for a local smoke test; it is not a project dependency.
 
-### Verified Commands
+### Verified Commands For This Pass
 
 The following commands were run successfully in `/Users/sawyer/github/patchworks` on 2026-03-20:
 
 ```bash
-cargo build
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 cargo nextest run
+```
+
+Still valid from the previous 2026-03-20 verification baseline, but not re-run in this pass:
+
+```bash
+cargo build
 cargo bench --no-run
 cargo deny check
 cargo run -- --help
 ```
 
-Observed `cargo run -- --help` output:
-
-- Usage: `patchworks [OPTIONS] [FILES]...`
-- Files: zero, one, or two database files to open in the UI
-- Supported option: `--snapshot <SNAPSHOT>`
-
-Verified CLI snapshot smoke test:
-
-```bash
-tmp_db="/tmp/patchworks-cli-smoke-$RANDOM.sqlite"
-rm -f "$tmp_db"
-sqlite3 "$tmp_db" "CREATE TABLE demo (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO demo (name) VALUES ('sample');"
-cargo run -- --snapshot "$tmp_db"
-rm -f "$tmp_db"
-```
-
-Observed result of the snapshot smoke test:
-
-- `cargo run -- --snapshot ...` completed successfully.
-- The command created the default Patchworks store under `~/.patchworks/`.
-- I cleaned up the temporary snapshot metadata row and copied database after verification.
+The previous pass also verified a CLI snapshot smoke test with `cargo run -- --snapshot <db>`, including creation of the default store under `~/.patchworks/`.
 
 ### Unverified But Likely Commands
 
@@ -215,6 +203,8 @@ Authoritative files:
   Source of truth for inspection, diffing, snapshot storage, and SQL export behavior.
 - `tests/diff_tests.rs`, `tests/proptest_invariants.rs`, and `tests/snapshot_tests.rs`
   Best executable specification of current expected behavior.
+- `src/app.rs`
+  Source of truth for the background diff task lifecycle and its focused unit-test coverage.
 - `tests/support/mod.rs`
   Shared integration-test helpers for fixtures and temporary SQLite databases.
 - `tests/fixtures/create_fixtures.sql`
@@ -235,9 +225,9 @@ Useful but secondary docs:
 
 Current doc and behavior alignment notes:
 
-- `README.md` now includes the verified `nextest`, benchmark, and `cargo-deny` workflows alongside the build/test commands.
+- `README.md` now includes the verified `nextest`, benchmark, and `cargo-deny` workflows alongside the build/test commands, and notes that diffs run in the background.
 - `README.md` still documents that views are inspect-only, snapshot state is stored in `~/.patchworks/`, and the crate is not published on crates.io.
-- `AGENTS.md` now mentions the benchmark, property-test, CI, and dependency-policy workflows.
+- `AGENTS.md` now mentions the benchmark, property-test, CI, dependency-policy workflows, and the background diff behavior.
 - There is still no real screenshot committed to the repo.
 
 Config and state files that affect behavior:
@@ -250,7 +240,7 @@ Config and state files that affect behavior:
 
 ## Code Review Findings
 
-Full review of every source file completed 2026-03-20. Build, test, nextest, clippy, fmt, bench compile, and `cargo-deny` all pass clean after the changes in this pass.
+Full review of every source file completed 2026-03-20. `cargo test`, `cargo nextest run`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt --all --check` pass clean after the changes in this pass.
 
 ### Overall Assessment
 
@@ -258,11 +248,11 @@ The codebase is solid for a Phase 1 product. Code is well-organized, cleanly sep
 
 ### Remaining Findings
 
-1. **Diff computation still blocks the UI thread** (`src/app.rs`). `compute_diff()` runs synchronously on the main `egui` thread, so large diffs will still freeze the UI. This is the biggest remaining product risk.
+1. **SQL export still materializes the entire migration as one `String`** (`src/db/differ.rs`, `src/diff/export.rs`). Very large exports can consume substantial memory.
 
-2. **SQL export still materializes the entire migration as one `String`** (`src/db/differ.rs`, `src/diff/export.rs`). Very large exports can consume substantial memory.
+2. **`load_all_rows()` still materializes whole tables during export seeding** (`src/db/inspector.rs`). Added or rebuilt tables with millions of rows can still OOM.
 
-3. **`load_all_rows()` still materializes whole tables during export seeding** (`src/db/inspector.rs`). Added or rebuilt tables with millions of rows can still OOM.
+3. **Background diff execution is still fire-and-forget with no progress or cancellation model** (`src/app.rs`, `src/ui/diff_view.rs`). The UI stays responsive now, but large diffs still offer only an indeterminate spinner and last-request-wins behavior.
 
 4. **`SnapshotStore` still opens a fresh SQLite connection for each operation** (`src/db/snapshot.rs`). The code is simple and correct, but it is less efficient than keeping a persistent connection around.
 

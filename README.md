@@ -71,6 +71,7 @@ Patchworks creates a local store in your home directory:
 ## Behavior Notes
 
 - Starting the app with two database paths computes a diff on launch.
+- Diff requests now run in the background, so the UI stays responsive while large comparisons complete.
 - Opening a right-side database from the toolbar loads it, but you still need to click `Diff`.
 - Row diffs are only computed for tables that exist on both sides.
 - SQL export favors correctness over minimal migrations when a table schema changes.

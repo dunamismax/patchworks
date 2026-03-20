@@ -53,6 +53,8 @@ pub struct DatabasePaneState {
 pub struct DiffState {
     /// Latest diff payload.
     pub result: Option<DatabaseDiff>,
+    /// Whether a background diff computation is currently running.
+    pub is_computing: bool,
     /// Selected table diff.
     pub selected_table: Option<String>,
     /// Chosen rendering mode.
@@ -65,6 +67,7 @@ impl Default for DiffState {
     fn default() -> Self {
         Self {
             result: None,
+            is_computing: false,
             selected_table: None,
             display_mode: DiffDisplayMode::Grid,
             error: None,
