@@ -7,7 +7,8 @@ use std::path::Path;
 use rusqlite::Rows;
 
 use crate::db::inspector::{
-    compare_value_slices, open_read_only, quote_identifier, read_value_row, sql_value_from_ref,
+    compare_sql_values, compare_value_slices, open_read_only, quote_identifier, read_value_row,
+    sql_value_from_ref,
 };
 use crate::db::types::{
     DatabaseSummary, DiffStats, RowModification, SqlValue, TableDataDiff, TableInfo,
@@ -158,7 +159,7 @@ pub fn diff_table(
                             .iter()
                             .zip(left_row.row_values.iter().zip(right_row.row_values.iter()))
                             .filter_map(|(column, (left_value, right_value))| {
-                                if left_value == right_value {
+                                if compare_sql_values(left_value, right_value) == Ordering::Equal {
                                     None
                                 } else {
                                     Some(crate::db::types::CellChange {

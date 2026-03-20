@@ -28,8 +28,7 @@ pub fn diff_databases(left_path: &Path, right_path: &Path) -> Result<DatabaseDif
     let right = inspect_database(right_path)?;
     let schema = schema::diff_schema(&left, &right);
     let data_diffs = data::diff_all_tables(left_path, right_path, &left, &right)?;
-    let sql_export =
-        export::export_diff_as_sql(left_path, right_path, &left, &right, &schema, &data_diffs)?;
+    let sql_export = export::export_diff_as_sql(right_path, &left, &right, &schema, &data_diffs)?;
 
     Ok(DatabaseDiff {
         left,

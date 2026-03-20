@@ -9,7 +9,6 @@ use crate::error::{PatchworksError, Result};
 
 /// Generates a SQL migration script that transforms the left database into the right database.
 pub fn export_diff_as_sql(
-    _left_path: &Path,
     right_path: &Path,
     left: &DatabaseSummary,
     right: &DatabaseSummary,
@@ -66,7 +65,7 @@ pub fn export_diff_as_sql(
             .iter()
             .find(|diff| diff.table_name == *table_name)
         {
-            append_incremental_changes(table, data_diff, &mut sql);
+            append_incremental_changes(table, data_diff, &mut sql)?;
         }
     }
 
@@ -95,7 +94,11 @@ fn append_create_and_seed(path: &Path, table: &TableInfo, sql: &mut Vec<String>)
     Ok(())
 }
 
-fn append_incremental_changes(table: &TableInfo, data_diff: &TableDataDiff, sql: &mut Vec<String>) {
+fn append_incremental_changes(
+    table: &TableInfo,
+    data_diff: &TableDataDiff,
+    sql: &mut Vec<String>,
+) -> Result<()> {
     let primary_key = if table.primary_key.is_empty() {
         vec!["rowid".to_owned()]
     } else {
@@ -111,7 +114,7 @@ fn append_incremental_changes(table: &TableInfo, data_diff: &TableDataDiff, sql:
         sql.push(format!(
             "DELETE FROM {} WHERE {};",
             quote_identifier(&table.name),
-            where_clause(&data_diff.columns, key, &primary_key)
+            where_clause(&table.name, &data_diff.columns, key, &primary_key)?
         ));
     }
 
@@ -161,21 +164,45 @@ fn append_incremental_changes(table: &TableInfo, data_diff: &TableDataDiff, sql:
             where_clause
         ));
     }
+
+    Ok(())
 }
 
-fn where_clause(columns: &[String], row: &[SqlValue], primary_key: &[String]) -> String {
+fn where_clause(
+    table_name: &str,
+    columns: &[String],
+    row: &[SqlValue],
+    primary_key: &[String],
+) -> Result<String> {
     if primary_key.len() == 1 && primary_key[0] == "rowid" {
-        return format!("rowid = {}", sql_literal(&row[0]));
+        return Ok(format!("rowid = {}", sql_literal(&row[0])));
     }
 
-    primary_key
+    let clauses = primary_key
         .iter()
         .map(|key| {
-            let index = columns.iter().position(|column| column == key).unwrap_or(0);
-            format!("{} = {}", quote_identifier(key), sql_literal(&row[index]))
+            let index = columns
+                .iter()
+                .position(|column| column == key)
+                .ok_or_else(|| {
+                    PatchworksError::InvalidState(format!(
+                        "missing primary key column `{key}` while exporting `{table_name}`"
+                    ))
+                })?;
+            let value = row.get(index).ok_or_else(|| {
+                PatchworksError::InvalidState(format!(
+                    "missing primary key value for column `{key}` while exporting `{table_name}`"
+                ))
+            })?;
+            Ok(format!(
+                "{} = {}",
+                quote_identifier(key),
+                sql_literal(value)
+            ))
         })
-        .collect::<Vec<_>>()
-        .join(" AND ")
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(clauses.join(" AND "))
 }
 
 fn sql_literal(value: &SqlValue) -> String {
@@ -197,5 +224,28 @@ fn sql_literal(value: &SqlValue) -> String {
                 .collect::<String>();
             format!("X'{hex}'")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::where_clause;
+    use crate::db::types::SqlValue;
+    use crate::error::PatchworksError;
+
+    #[test]
+    fn where_clause_rejects_missing_primary_key_columns() {
+        let error = where_clause(
+            "items",
+            &[String::from("name")],
+            &[SqlValue::Text(String::from("widget"))],
+            &[String::from("id")],
+        )
+        .expect_err("missing primary key column should error");
+
+        assert!(matches!(error, PatchworksError::InvalidState(_)));
+        assert!(error
+            .to_string()
+            .contains("missing primary key column `id` while exporting `items`"));
     }
 }

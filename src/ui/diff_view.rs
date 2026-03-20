@@ -13,11 +13,7 @@ pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
     };
 
     ui.horizontal(|ui| {
-        ui.selectable_value(
-            &mut diff_state.display_mode,
-            DiffDisplayMode::SideBySide,
-            "Side-by-side",
-        );
+        ui.selectable_value(&mut diff_state.display_mode, DiffDisplayMode::Grid, "Grid");
         ui.selectable_value(
             &mut diff_state.display_mode,
             DiffDisplayMode::Unified,
@@ -53,7 +49,7 @@ pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
     if let Some(table_diff) = active {
         render_stats(ui, table_diff);
         match diff_state.display_mode {
-            DiffDisplayMode::SideBySide => render_side_by_side(ui, table_diff),
+            DiffDisplayMode::Grid => render_grid(ui, table_diff),
             DiffDisplayMode::Unified => render_unified(ui, table_diff),
         }
     } else {
@@ -80,7 +76,7 @@ fn render_stats(ui: &mut Ui, table_diff: &TableDataDiff) {
     ui.separator();
 }
 
-fn render_side_by_side(ui: &mut Ui, table_diff: &TableDataDiff) {
+fn render_grid(ui: &mut Ui, table_diff: &TableDataDiff) {
     ScrollArea::both().show(ui, |ui| {
         Grid::new(format!("diff-grid-{}", table_diff.table_name))
             .striped(true)

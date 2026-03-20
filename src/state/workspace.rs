@@ -23,8 +23,8 @@ pub enum WorkspaceView {
 /// Rendering style for diff results.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiffDisplayMode {
-    /// Two aligned sets of rows.
-    SideBySide,
+    /// Tabular grid of added, removed, and modified rows.
+    Grid,
     /// Unified list of changes.
     Unified,
 }
@@ -66,14 +66,14 @@ impl Default for DiffState {
         Self {
             result: None,
             selected_table: None,
-            display_mode: DiffDisplayMode::SideBySide,
+            display_mode: DiffDisplayMode::Grid,
             error: None,
         }
     }
 }
 
 /// Entire workspace state shared by the desktop app.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct WorkspaceState {
     /// Left database pane.
     pub left: DatabasePaneState,

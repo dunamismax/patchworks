@@ -1,6 +1,7 @@
 //! SQLite database inspection and paginated table reads.
 
 use std::cmp::Ordering;
+use std::convert::TryFrom;
 use std::path::Path;
 
 use rusqlite::types::ValueRef;
@@ -88,6 +89,17 @@ pub fn read_table_page(path: &Path, table_name: &str, query: &TableQuery) -> Res
             path: path.to_path_buf(),
         })?;
 
+    read_table_page_for_table(path, &table, query)
+}
+
+/// Reads a page of table rows using a preloaded table definition.
+pub fn read_table_page_for_table(
+    path: &Path,
+    table: &TableInfo,
+    query: &TableQuery,
+) -> Result<TablePage> {
+    let table = table.clone();
+
     let connection = open_read_only(path)?;
     let order_by = build_order_by_clause(&table, query.sort.as_ref())?;
     let offset = query.page.saturating_mul(query.page_size);
@@ -96,7 +108,7 @@ pub fn read_table_page(path: &Path, table_name: &str, query: &TableQuery) -> Res
     let sql = format!(
         "SELECT {} FROM {}{} LIMIT ? OFFSET ?",
         select_column_list(&table.columns),
-        quote_identifier(table_name),
+        quote_identifier(&table.name),
         order_by
     );
     let mut statement = connection.prepare(&sql)?;
@@ -277,7 +289,11 @@ fn load_columns(connection: &Connection, table_name: &str) -> Result<Vec<ColumnI
 fn count_rows(connection: &Connection, table_name: &str) -> Result<u64> {
     let sql = format!("SELECT COUNT(*) FROM {}", quote_identifier(table_name));
     let count = connection.query_row(&sql, [], |row| row.get::<_, i64>(0))?;
-    Ok(count as u64)
+    u64::try_from(count).map_err(|_| {
+        PatchworksError::InvalidState(format!(
+            "received a negative row count while inspecting `{table_name}`"
+        ))
+    })
 }
 
 fn build_order_by_clause(table: &TableInfo, sort: Option<&TableSort>) -> Result<String> {

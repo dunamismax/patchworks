@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use patchworks::db::differ::diff_databases;
 use patchworks::db::inspector::{inspect_database, read_table_page};
@@ -8,39 +7,9 @@ use patchworks::db::types::{SortDirection, TableQuery, TableSort};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-fn fixture_sql(name: &str) -> String {
-    let content = include_str!("fixtures/create_fixtures.sql");
-    let mut fixtures = HashMap::new();
-    let mut current_name = None::<String>;
-    let mut buffer = String::new();
+mod support;
 
-    for line in content.lines() {
-        if let Some(name) = line.strip_prefix("-- @fixture ") {
-            if let Some(previous) = current_name.replace(name.trim().to_owned()) {
-                fixtures.insert(previous, buffer.trim().to_owned());
-                buffer.clear();
-            }
-        } else {
-            buffer.push_str(line);
-            buffer.push('\n');
-        }
-    }
-
-    if let Some(previous) = current_name {
-        fixtures.insert(previous, buffer.trim().to_owned());
-    }
-
-    fixtures.get(name).cloned().expect("fixture exists")
-}
-
-fn create_db(dir: &TempDir, file_name: &str, fixture_name: &str) -> PathBuf {
-    let path = dir.path().join(file_name);
-    let connection = Connection::open(&path).expect("create sqlite db");
-    connection
-        .execute_batch(&fixture_sql(fixture_name))
-        .expect("apply fixture sql");
-    path
-}
+use support::{create_db, create_db_with_sql};
 
 #[test]
 fn inspector_reads_schema_and_paged_rows() {
@@ -195,4 +164,30 @@ fn snapshot_store_can_prepare_paths_for_diff_workflows() {
     let diff = diff_databases(&db_path, &snapshot_path).expect("diff snapshot");
     assert_eq!(diff.schema.added_tables.len(), 0);
     assert_eq!(diff.data_diffs[0].stats.added, 0);
+}
+
+#[test]
+fn data_diff_treats_negative_zero_and_zero_as_equal() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db_with_sql(
+        &temp_dir,
+        "float-left.sqlite",
+        "
+        CREATE TABLE measurements (id INTEGER PRIMARY KEY, reading REAL);
+        INSERT INTO measurements (id, reading) VALUES (1, -0.0);
+        ",
+    );
+    let right_path = create_db_with_sql(
+        &temp_dir,
+        "float-right.sqlite",
+        "
+        CREATE TABLE measurements (id INTEGER PRIMARY KEY, reading REAL);
+        INSERT INTO measurements (id, reading) VALUES (1, 0.0);
+        ",
+    );
+
+    let diff = diff_databases(&left_path, &right_path).expect("compute diff");
+    let measurements = &diff.data_diffs[0];
+    assert_eq!(measurements.stats.modified, 0);
+    assert_eq!(measurements.stats.unchanged, 1);
 }

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 
 use crate::db::differ::{diff_databases, DatabaseDiff};
-use crate::db::inspector::{inspect_database, read_table_page};
+use crate::db::inspector::{inspect_database, read_table_page_for_table};
 use crate::db::snapshot::SnapshotStore;
 use crate::error::Result;
 use crate::state::workspace::{DatabasePaneState, WorkspaceState, WorkspaceView};
@@ -58,19 +58,33 @@ impl PatchworksApp {
     fn refresh_visible_tables(&mut self) {
         if let Some(path) = self.workspace.left.path.clone() {
             if let Some(selected) = self.workspace.left.selected_table.clone() {
-                if let Ok(page) =
-                    read_table_page(&path, &selected, &self.workspace.left.table_query)
-                {
-                    self.workspace.left.table_page = Some(page);
+                if let Some(summary) = &self.workspace.left.summary {
+                    if let Some(table) = summary.tables.iter().find(|table| table.name == selected)
+                    {
+                        if let Ok(page) = read_table_page_for_table(
+                            &path,
+                            table,
+                            &self.workspace.left.table_query,
+                        ) {
+                            self.workspace.left.table_page = Some(page);
+                        }
+                    }
                 }
             }
         }
         if let Some(path) = self.workspace.right.path.clone() {
             if let Some(selected) = self.workspace.right.selected_table.clone() {
-                if let Ok(page) =
-                    read_table_page(&path, &selected, &self.workspace.right.table_query)
-                {
-                    self.workspace.right.table_page = Some(page);
+                if let Some(summary) = &self.workspace.right.summary {
+                    if let Some(table) = summary.tables.iter().find(|table| table.name == selected)
+                    {
+                        if let Ok(page) = read_table_page_for_table(
+                            &path,
+                            table,
+                            &self.workspace.right.table_query,
+                        ) {
+                            self.workspace.right.table_page = Some(page);
+                        }
+                    }
                 }
             }
         }
@@ -251,7 +265,15 @@ fn load_into_pane(pane: &mut DatabasePaneState, store: &SnapshotStore, path: &Pa
     let summary = inspect_database(path)?;
     let selected_table = summary.tables.first().map(|table| table.name.clone());
     let table_page = if let Some(table_name) = &selected_table {
-        Some(read_table_page(path, table_name, &pane.table_query)?)
+        let table = summary
+            .tables
+            .iter()
+            .find(|table| table.name == *table_name)
+            .ok_or_else(|| crate::error::PatchworksError::MissingTable {
+                table: table_name.clone(),
+                path: path.to_path_buf(),
+            })?;
+        Some(read_table_page_for_table(path, table, &pane.table_query)?)
     } else {
         None
     };
