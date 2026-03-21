@@ -20,7 +20,25 @@ Current limitations:
 - Snapshot state is stored under `~/.patchworks/`.
 - Very large exports and snapshot seeds still materialize substantial data in memory.
 - Live / WAL-backed / actively changing databases are still best-effort.
-- The crate is not published on crates.io yet.
+
+## Crates.io
+
+- <https://crates.io/crates/patchworks>
+
+## Install
+
+```bash
+cargo install patchworks
+```
+
+## Basic Use
+
+```bash
+patchworks
+patchworks app.db
+patchworks left.db right.db
+patchworks --snapshot app.db
+```
 
 ## Requirements
 
@@ -54,7 +72,7 @@ Benchmarks can then be executed locally with:
 cargo bench
 ```
 
-Launch and snapshot examples:
+If you're working from a local checkout instead of an installed binary, the equivalent commands are:
 
 ```bash
 cargo run
@@ -62,8 +80,6 @@ cargo run -- app.db
 cargo run -- left.db right.db
 cargo run -- --snapshot app.db
 ```
-
-Patchworks is not currently available via `cargo install patchworks` from crates.io.
 
 For a local publishability check before release, run:
 

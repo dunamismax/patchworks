@@ -192,7 +192,8 @@ cargo install --path .
 
 Important packaging note:
 
-- `cargo install patchworks` from crates.io is not valid as of 2026-03-21 because the crate is not published there.
+- `patchworks` is now published on crates.io at <https://crates.io/crates/patchworks>.
+- `cargo install patchworks` is the expected install path for end users; this exact install flow was not re-verified in this pass.
 - `cargo package --allow-dirty` now completes successfully after adding repository/homepage/documentation metadata and ensuring the packaged README points at a relative `LICENSE` path.
 
 ## Source-Of-Truth Notes
