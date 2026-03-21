@@ -65,6 +65,12 @@ cargo run -- --snapshot app.db
 
 Patchworks is not currently available via `cargo install patchworks` from crates.io.
 
+For a local publishability check before release, run:
+
+```bash
+cargo package --allow-dirty
+```
+
 ## Snapshot Storage
 
 Patchworks creates a local store in your home directory:
@@ -97,4 +103,4 @@ Patchworks creates a local store in your home directory:
 
 ## License
 
-MIT. See [LICENSE](/Users/sawyer/github/patchworks/LICENSE).
+MIT. See [LICENSE](LICENSE).

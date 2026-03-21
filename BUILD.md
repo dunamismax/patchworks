@@ -4,21 +4,19 @@
 
 ## Last Verified Baseline
 
-- Verified on: 2026-03-20
+- Verified on: 2026-03-21
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
-- Base commit at start of this pass: `5665809ede41325d8c375e874a761047949de56f`
+- Base commit at start of this pass: `8824de772ce03e46b2de9fd95d194cfff326b730`
 - Host used for verification: macOS arm64 (`Darwin 25.4.0`)
 - Last full code review: 2026-03-20
 - This verification was performed against the working tree rooted at the commit above before the changes from this pass were committed.
 
 ## Completed In This Pass
 
-- Extended SQLite inspection in `src/db/inspector.rs` so `DatabaseSummary` now captures tracked indexes and triggers from `sqlite_master` alongside tables and views.
-- Extended schema diffing in `src/diff/schema.rs` and SQL export in `src/diff/export.rs` so generated migrations now drop/recreate changed indexes and triggers, and defer trigger recreation until after migration DML to avoid left-side trigger side effects during export application.
-- Stabilized sorted pagination in `src/db/inspector.rs` by appending primary-key / `rowid` tie-breakers whenever the user sorts by a non-unique column.
-- Added focused regression coverage in `tests/diff_tests.rs` plus new unit tests in `src/db/inspector.rs` / `src/diff/export.rs` for schema-object preservation, trigger-safe export application, and deterministic sorted pagination.
-- Updated `README.md` and this file so the documented behavior reflects schema-object preservation, stable pagination, and the commands re-verified in this pass.
+- Added crates.io-facing package metadata in `Cargo.toml`, including repository, homepage, documentation, keywords, and categories.
+- Updated `README.md` so the packaged readme uses a relative `LICENSE` link and documents `cargo package --allow-dirty` as the local publishability check.
+- Verified package contents and local package validation with `cargo package --allow-dirty --list`, `cargo package --allow-dirty`, and `cargo test`.
 
 ## Project Baseline
 
@@ -153,18 +151,20 @@ Notes:
 
 ### Verified Commands For This Pass
 
-The following commands were run successfully in `/Users/sawyer/github/patchworks` on 2026-03-20:
+The following commands were run successfully in `/Users/sawyer/github/patchworks` on 2026-03-21:
 
 ```bash
-cargo test --test diff_tests
-cargo fmt --all --check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo metadata --no-deps --format-version 1
+cargo package --allow-dirty --list
+cargo package --allow-dirty
 cargo test
 ```
 
 Still valid from the previous 2026-03-20 verification baseline, but not re-run in this pass:
 
 ```bash
+cargo fmt --all --check
+cargo clippy --all-targets --all-features -- -D warnings
 cargo nextest run
 cargo build
 cargo bench --no-run
@@ -192,7 +192,8 @@ cargo install --path .
 
 Important packaging note:
 
-- `cargo install patchworks` from crates.io is not valid as of 2026-03-20 because the crate is not published there.
+- `cargo install patchworks` from crates.io is not valid as of 2026-03-21 because the crate is not published there.
+- `cargo package --allow-dirty` now completes successfully after adding repository/homepage/documentation metadata and ensuring the packaged README points at a relative `LICENSE` path.
 
 ## Source-Of-Truth Notes
 
@@ -230,7 +231,8 @@ Useful but secondary docs:
 
 Current doc and behavior alignment notes:
 
-- `README.md` now includes the verified `nextest`, benchmark, and `cargo-deny` workflows alongside the build/test commands, and notes that diffs run in the background.
+- `Cargo.toml` now includes crates.io-facing metadata for repository, homepage, documentation, keywords, and categories.
+- `README.md` now includes the verified `nextest`, benchmark, and `cargo-deny` workflows alongside the build/test commands, notes that diffs run in the background, documents `cargo package --allow-dirty` for local publishability checks, and uses a relative `LICENSE` link that will render correctly from the packaged crate.
 - `README.md` now also calls out that views remain inspect-only, tracked indexes/triggers are preserved in generated SQL, stable sorted pagination uses a primary-key / `rowid` tie-breaker, and large/live-database caveats still apply.
 - `AGENTS.md` now mentions the benchmark, property-test, CI, dependency-policy workflows, and the background diff behavior.
 - There is still no real screenshot committed to the repo.

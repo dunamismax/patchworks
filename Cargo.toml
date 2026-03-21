@@ -5,6 +5,11 @@ edition = "2021"
 description = "Git-style visual diffs for SQLite databases."
 license = "MIT"
 readme = "README.md"
+repository = "https://github.com/dunamismax/patchworks"
+homepage = "https://github.com/dunamismax/patchworks"
+documentation = "https://docs.rs/patchworks"
+keywords = ["sqlite", "diff", "database", "gui", "migration"]
+categories = ["database", "gui"]
 
 [dependencies]
 anyhow = "1.0.102"
