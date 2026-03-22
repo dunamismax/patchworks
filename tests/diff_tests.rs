@@ -147,6 +147,234 @@ fn sql_export_uses_rowid_for_removed_rows_without_primary_key() {
 }
 
 #[test]
+fn without_rowid_primary_key_fallback_still_produces_diff_and_export() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db_with_sql(
+        &temp_dir,
+        "without-rowid-left.sqlite",
+        "
+        CREATE TABLE memberships (
+            tenant_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, user_id)
+        ) WITHOUT ROWID;
+        INSERT INTO memberships (tenant_id, user_id, role) VALUES
+            (1, 10, 'owner'),
+            (1, 20, 'viewer');
+        ",
+    );
+    let right_path = create_db_with_sql(
+        &temp_dir,
+        "without-rowid-right.sqlite",
+        "
+        CREATE TABLE memberships (
+            account_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            PRIMARY KEY (account_id, member_id)
+        ) WITHOUT ROWID;
+        INSERT INTO memberships (account_id, member_id, role) VALUES
+            (1, 10, 'owner'),
+            (1, 30, 'editor');
+        ",
+    );
+    let generated_path = temp_dir.path().join("without-rowid-generated.sqlite");
+
+    std::fs::copy(&left_path, &generated_path).expect("copy left db");
+    let diff = diff_databases(&left_path, &right_path).expect("compute diff");
+    let memberships = diff
+        .data_diffs
+        .iter()
+        .find(|table| table.table_name == "memberships")
+        .expect("memberships diff");
+
+    assert!(
+        memberships
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("table-local row identity")),
+        "expected fallback warning, got: {:?}",
+        memberships.warnings
+    );
+    assert!(
+        diff.sql_export
+            .contains("CREATE TABLE __patchworks_new_memberships"),
+        "expected temp-table rebuild in exported SQL, got:\n{}",
+        diff.sql_export
+    );
+
+    let generated = Connection::open(&generated_path).expect("open generated db");
+    generated
+        .execute_batch(&diff.sql_export)
+        .expect("apply exported sql");
+
+    let generated_summary = inspect_database(&generated_path).expect("inspect generated");
+    let right_summary = inspect_database(&right_path).expect("inspect right");
+    let generated_table_shape = generated_summary
+        .tables
+        .iter()
+        .map(|table| {
+            (
+                table.name.clone(),
+                table.columns.clone(),
+                table.row_count,
+                table.primary_key.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let right_table_shape = right_summary
+        .tables
+        .iter()
+        .map(|table| {
+            (
+                table.name.clone(),
+                table.columns.clone(),
+                table.row_count,
+                table.primary_key.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(generated_table_shape, right_table_shape);
+
+    let generated_memberships =
+        read_table_page(&generated_path, "memberships", &TableQuery::default())
+            .expect("generated memberships");
+    let right_memberships = read_table_page(&right_path, "memberships", &TableQuery::default())
+        .expect("right memberships");
+    assert_eq!(generated_memberships.rows, right_memberships.rows);
+}
+
+#[test]
+fn sql_export_handles_foreign_keys_when_applied_with_foreign_keys_enabled() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db_with_sql(
+        &temp_dir,
+        "fk-left.sqlite",
+        "
+        PRAGMA foreign_keys=ON;
+        CREATE TABLE parents (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL
+        );
+        CREATE TABLE children (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER NOT NULL REFERENCES parents(id),
+            label TEXT NOT NULL
+        );
+        INSERT INTO parents (id, name) VALUES (1, 'alpha');
+        INSERT INTO children (id, parent_id, label) VALUES (1, 1, 'keep');
+        ",
+    );
+    let right_path = create_db_with_sql(
+        &temp_dir,
+        "fk-right.sqlite",
+        "
+        PRAGMA foreign_keys=ON;
+        CREATE TABLE parents (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active'
+        );
+        CREATE TABLE children (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER NOT NULL REFERENCES parents(id),
+            label TEXT NOT NULL
+        );
+        INSERT INTO parents (id, name, status) VALUES
+            (1, 'alpha', 'active'),
+            (2, 'beta', 'active');
+        INSERT INTO children (id, parent_id, label) VALUES
+            (1, 1, 'keep'),
+            (2, 2, 'new child');
+        ",
+    );
+    let generated_path = temp_dir.path().join("fk-generated.sqlite");
+
+    std::fs::copy(&left_path, &generated_path).expect("copy left db");
+    let diff = diff_databases(&left_path, &right_path).expect("compute diff");
+    assert!(
+        diff.sql_export
+            .starts_with("PRAGMA foreign_keys=OFF;\nBEGIN TRANSACTION;"),
+        "expected foreign-key guard in exported SQL, got:\n{}",
+        diff.sql_export
+    );
+
+    let generated = Connection::open(&generated_path).expect("open generated db");
+    generated
+        .pragma_update(None, "foreign_keys", "ON")
+        .expect("enable foreign keys");
+    generated
+        .execute_batch(&diff.sql_export)
+        .expect("apply exported sql");
+
+    let fk_enabled: i64 = generated
+        .pragma_query_value(None, "foreign_keys", |row| row.get(0))
+        .expect("read foreign_keys pragma");
+    assert_eq!(fk_enabled, 1);
+
+    let generated_summary = inspect_database(&generated_path).expect("inspect generated");
+    let right_summary = inspect_database(&right_path).expect("inspect right");
+    let generated_table_shape = generated_summary
+        .tables
+        .iter()
+        .map(|table| {
+            (
+                table.name.clone(),
+                table.columns.clone(),
+                table.row_count,
+                table.primary_key.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let right_table_shape = right_summary
+        .tables
+        .iter()
+        .map(|table| {
+            (
+                table.name.clone(),
+                table.columns.clone(),
+                table.row_count,
+                table.primary_key.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(generated_table_shape, right_table_shape);
+
+    let generated_parents = read_table_page(&generated_path, "parents", &TableQuery::default())
+        .expect("generated parents");
+    let right_parents =
+        read_table_page(&right_path, "parents", &TableQuery::default()).expect("right parents");
+    assert_eq!(generated_parents.rows, right_parents.rows);
+
+    let generated_children = read_table_page(&generated_path, "children", &TableQuery::default())
+        .expect("generated children");
+    let right_children =
+        read_table_page(&right_path, "children", &TableQuery::default()).expect("right children");
+    assert_eq!(generated_children.rows, right_children.rows);
+
+    let mut statement = generated
+        .prepare("PRAGMA foreign_key_check")
+        .expect("prepare foreign_key_check");
+    let violations = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })
+        .expect("query foreign_key_check")
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .expect("collect foreign_key_check rows");
+    assert!(
+        violations.is_empty(),
+        "foreign key violations: {violations:?}"
+    );
+}
+
+#[test]
 fn snapshot_store_can_prepare_paths_for_diff_workflows() {
     let temp_dir = TempDir::new().expect("temp dir");
     let db_path = create_db(&temp_dir, "snapshot.sqlite", "snapshot_source");

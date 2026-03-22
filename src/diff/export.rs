@@ -41,6 +41,7 @@ pub fn export_diff_as_sql(
         .collect::<BTreeSet<_>>();
     let mut sql = Vec::new();
 
+    sql.push("PRAGMA foreign_keys=OFF;".to_owned());
     sql.push("BEGIN TRANSACTION;".to_owned());
 
     for trigger in &left.triggers {
@@ -69,7 +70,7 @@ pub fn export_diff_as_sql(
     }
 
     for table in &schema_diff.added_tables {
-        append_create_and_seed(right_path, table, &mut sql)?;
+        append_create_and_seed(right_path, table, &table.name, &mut sql)?;
     }
 
     for table_diff in &schema_diff.modified_tables {
@@ -79,14 +80,17 @@ pub fn export_diff_as_sql(
                 table_diff.table_name
             ))
         })?;
-        let backup_name = format!("__patchworks_old_{}", right_table.name);
+        let replacement_name = format!("__patchworks_new_{}", right_table.name);
+        append_create_and_seed(right_path, right_table, &replacement_name, &mut sql)?;
+        sql.push(format!(
+            "DROP TABLE {};",
+            quote_identifier(&right_table.name)
+        ));
         sql.push(format!(
             "ALTER TABLE {} RENAME TO {};",
-            quote_identifier(&right_table.name),
-            quote_identifier(&backup_name)
+            quote_identifier(&replacement_name),
+            quote_identifier(&right_table.name)
         ));
-        append_create_and_seed(right_path, right_table, &mut sql)?;
-        sql.push(format!("DROP TABLE {};", quote_identifier(&backup_name)));
     }
 
     for table_name in &schema_diff.unchanged_tables {
@@ -114,6 +118,7 @@ pub fn export_diff_as_sql(
     }
 
     sql.push("COMMIT;".to_owned());
+    sql.push("PRAGMA foreign_keys=ON;".to_owned());
     Ok(sql.join("\n"))
 }
 
@@ -187,15 +192,17 @@ fn schema_object_changed_table_names(schema_diff: &SchemaDiff) -> BTreeSet<Strin
         .collect()
 }
 
-fn append_create_and_seed(path: &Path, table: &TableInfo, sql: &mut Vec<String>) -> Result<()> {
-    let create_sql = table.create_sql.clone().ok_or_else(|| {
-        PatchworksError::InvalidState(format!("missing CREATE TABLE SQL for `{}`", table.name))
-    })?;
-    sql.push(create_sql.trim_end_matches(';').to_owned() + ";");
+fn append_create_and_seed(
+    path: &Path,
+    table: &TableInfo,
+    target_name: &str,
+    sql: &mut Vec<String>,
+) -> Result<()> {
+    sql.push(create_table_sql_for_name(table, target_name)?);
     for row in load_all_rows(path, table)? {
         sql.push(format!(
             "INSERT INTO {} ({}) VALUES ({});",
-            quote_identifier(&table.name),
+            quote_identifier(target_name),
             table
                 .columns
                 .iter()
@@ -213,11 +220,7 @@ fn append_incremental_changes(
     data_diff: &TableDataDiff,
     sql: &mut Vec<String>,
 ) -> Result<()> {
-    let primary_key = if table.primary_key.is_empty() {
-        vec!["rowid".to_owned()]
-    } else {
-        table.primary_key.clone()
-    };
+    let primary_key = export_identity_columns(table)?;
 
     for (index, row) in data_diff.removed_rows.iter().enumerate() {
         let key = if table.primary_key.is_empty() {
@@ -354,10 +357,167 @@ fn sql_literal(value: &SqlValue) -> String {
     }
 }
 
+fn export_identity_columns(table: &TableInfo) -> Result<Vec<String>> {
+    if table.primary_key.is_empty() {
+        if table_supports_rowid(table) {
+            Ok(vec!["rowid".to_owned()])
+        } else {
+            Err(PatchworksError::InvalidState(format!(
+                "table `{}` has no primary key and cannot use rowid during SQL export",
+                table.name
+            )))
+        }
+    } else {
+        Ok(table.primary_key.clone())
+    }
+}
+
+fn table_supports_rowid(table: &TableInfo) -> bool {
+    table
+        .create_sql
+        .as_ref()
+        .map(|sql| !sql.to_ascii_uppercase().contains("WITHOUT ROWID"))
+        .unwrap_or(true)
+}
+
+fn create_table_sql_for_name(table: &TableInfo, target_name: &str) -> Result<String> {
+    let create_sql = table.create_sql.clone().ok_or_else(|| {
+        PatchworksError::InvalidState(format!("missing CREATE TABLE SQL for `{}`", table.name))
+    })?;
+    let trimmed = create_sql.trim_end_matches(';');
+    let sql = if table.name == target_name {
+        trimmed.to_owned()
+    } else {
+        rewrite_create_table_name(trimmed, target_name)?
+    };
+    Ok(sql + ";")
+}
+
+fn rewrite_create_table_name(create_sql: &str, target_name: &str) -> Result<String> {
+    let name_start = create_table_name_start(create_sql)?;
+    let name_end = create_table_name_end(create_sql, name_start)?;
+
+    if name_end <= name_start {
+        return Err(PatchworksError::InvalidState(
+            "CREATE TABLE SQL has an invalid table-name position while rewriting export".to_owned(),
+        ));
+    }
+
+    Ok(format!(
+        "{}{}{}",
+        &create_sql[..name_start],
+        target_name,
+        &create_sql[name_end..]
+    ))
+}
+
+fn create_table_name_start(create_sql: &str) -> Result<usize> {
+    let mut index = skip_ascii_whitespace(create_sql, 0);
+    index = consume_keyword(create_sql, index, "CREATE").ok_or_else(|| {
+        PatchworksError::InvalidState(
+            "CREATE TABLE SQL did not start with CREATE while rewriting export".to_owned(),
+        )
+    })?;
+    index = skip_ascii_whitespace(create_sql, index);
+
+    if let Some(next) = consume_keyword(create_sql, index, "TEMPORARY") {
+        index = skip_ascii_whitespace(create_sql, next);
+    } else if let Some(next) = consume_keyword(create_sql, index, "TEMP") {
+        index = skip_ascii_whitespace(create_sql, next);
+    }
+
+    index = consume_keyword(create_sql, index, "TABLE").ok_or_else(|| {
+        PatchworksError::InvalidState(
+            "CREATE TABLE SQL did not contain TABLE while rewriting export".to_owned(),
+        )
+    })?;
+    index = skip_ascii_whitespace(create_sql, index);
+
+    if let Some(next) = consume_keyword(create_sql, index, "IF") {
+        index = skip_ascii_whitespace(create_sql, next);
+        index = consume_keyword(create_sql, index, "NOT").ok_or_else(|| {
+            PatchworksError::InvalidState(
+                "CREATE TABLE SQL had IF without NOT while rewriting export".to_owned(),
+            )
+        })?;
+        index = skip_ascii_whitespace(create_sql, index);
+        index = consume_keyword(create_sql, index, "EXISTS").ok_or_else(|| {
+            PatchworksError::InvalidState(
+                "CREATE TABLE SQL had IF NOT without EXISTS while rewriting export".to_owned(),
+            )
+        })?;
+        index = skip_ascii_whitespace(create_sql, index);
+    }
+
+    Ok(index)
+}
+
+fn create_table_name_end(create_sql: &str, start: usize) -> Result<usize> {
+    let bytes = create_sql.as_bytes();
+    let mut index = start;
+    let mut quoted_by: Option<u8> = None;
+
+    while let Some(&byte) = bytes.get(index) {
+        if let Some(quote) = quoted_by {
+            if byte == quote {
+                if matches!(quote, b'"' | b'`') && bytes.get(index + 1) == Some(&quote) {
+                    index += 2;
+                    continue;
+                }
+                quoted_by = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        match byte {
+            b'"' => quoted_by = Some(b'"'),
+            b'`' => quoted_by = Some(b'`'),
+            b'[' => quoted_by = Some(b']'),
+            b'(' => break,
+            _ if byte.is_ascii_whitespace() => break,
+            _ => {}
+        }
+        index += 1;
+    }
+
+    if index == start {
+        Err(PatchworksError::InvalidState(
+            "CREATE TABLE SQL is missing a table name while rewriting export".to_owned(),
+        ))
+    } else {
+        Ok(index)
+    }
+}
+
+fn skip_ascii_whitespace(sql: &str, mut index: usize) -> usize {
+    while let Some(byte) = sql.as_bytes().get(index) {
+        if byte.is_ascii_whitespace() {
+            index += 1;
+        } else {
+            break;
+        }
+    }
+    index
+}
+
+fn consume_keyword(sql: &str, index: usize, keyword: &str) -> Option<usize> {
+    let end = index.checked_add(keyword.len())?;
+    let slice = sql.get(index..end)?;
+    if !slice.eq_ignore_ascii_case(keyword) {
+        return None;
+    }
+
+    match sql[end..].chars().next() {
+        Some(ch) if !ch.is_ascii_whitespace() => None,
+        _ => Some(end),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{schema_object_create_sql, where_clause};
-    use crate::db::types::{SchemaObjectInfo, SqlValue};
+    use super::{create_table_sql_for_name, schema_object_create_sql, where_clause, TableInfo};
+    use crate::db::types::{ColumnInfo, SchemaObjectInfo, SqlValue};
     use crate::error::PatchworksError;
 
     #[test]
@@ -392,5 +552,34 @@ mod tests {
         assert!(error
             .to_string()
             .contains("missing CREATE index SQL for `items_name_idx`"));
+    }
+
+    #[test]
+    fn create_table_sql_for_name_rewrites_table_name_for_rebuilds() {
+        let sql = create_table_sql_for_name(
+            &TableInfo {
+                name: "parents".to_owned(),
+                columns: vec![ColumnInfo {
+                    name: "id".to_owned(),
+                    col_type: "INTEGER".to_owned(),
+                    nullable: false,
+                    default_value: None,
+                    is_primary_key: true,
+                }],
+                row_count: 0,
+                primary_key: vec!["id".to_owned()],
+                create_sql: Some(
+                    "CREATE TABLE IF NOT EXISTS parents (id INTEGER PRIMARY KEY) WITHOUT ROWID"
+                        .to_owned(),
+                ),
+            },
+            "__patchworks_new_parents",
+        )
+        .expect("rewrite create sql");
+
+        assert_eq!(
+            sql,
+            "CREATE TABLE IF NOT EXISTS __patchworks_new_parents (id INTEGER PRIMARY KEY) WITHOUT ROWID;"
+        );
     }
 }

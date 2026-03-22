@@ -52,6 +52,7 @@ pub fn inspect_database(path: &Path) -> Result<DatabaseSummary> {
     for entry in entries {
         let (entry_type, name, table_name, create_sql) = entry?;
         if entry_type == "table" {
+            let normalized_create_sql = normalize_table_create_sql(create_sql, &name);
             let columns = load_columns(&connection, &name)?;
             let primary_key = columns
                 .iter()
@@ -65,7 +66,7 @@ pub fn inspect_database(path: &Path) -> Result<DatabaseSummary> {
                 columns,
                 row_count,
                 primary_key,
-                create_sql,
+                create_sql: normalized_create_sql,
             });
         } else if entry_type == "view" {
             views.push(ViewInfo { name, create_sql });
@@ -250,6 +251,154 @@ pub fn compare_sql_values(left: &SqlValue, right: &SqlValue) -> Ordering {
         (Text(left), Text(right)) => left.cmp(right),
         (Blob(left), Blob(right)) => left.cmp(right),
         _ => Ordering::Equal,
+    }
+}
+
+fn normalize_table_create_sql(create_sql: Option<String>, table_name: &str) -> Option<String> {
+    create_sql.map(|sql| normalize_table_create_sql_text(&sql, table_name))
+}
+
+fn normalize_table_create_sql_text(create_sql: &str, table_name: &str) -> String {
+    if !is_simple_identifier(table_name) {
+        return create_sql.to_owned();
+    }
+
+    let Ok(name_start) = create_table_name_start(create_sql) else {
+        return create_sql.to_owned();
+    };
+    let Ok(name_end) = create_table_name_end(create_sql, name_start) else {
+        return create_sql.to_owned();
+    };
+
+    let suffix = &create_sql[name_end..];
+    let normalized_suffix = if suffix.starts_with('(') {
+        format!(" {suffix}")
+    } else {
+        suffix.to_owned()
+    };
+
+    format!(
+        "{}{}{}",
+        &create_sql[..name_start],
+        table_name,
+        normalized_suffix
+    )
+}
+
+fn is_simple_identifier(identifier: &str) -> bool {
+    let mut chars = identifier.chars();
+    match chars.next() {
+        Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn create_table_name_start(create_sql: &str) -> Result<usize> {
+    let mut index = skip_ascii_whitespace(create_sql, 0);
+    index = consume_keyword(create_sql, index, "CREATE").ok_or_else(|| {
+        PatchworksError::InvalidState(
+            "CREATE TABLE SQL did not start with CREATE while normalizing inspection output"
+                .to_owned(),
+        )
+    })?;
+    index = skip_ascii_whitespace(create_sql, index);
+
+    if let Some(next) = consume_keyword(create_sql, index, "TEMPORARY") {
+        index = skip_ascii_whitespace(create_sql, next);
+    } else if let Some(next) = consume_keyword(create_sql, index, "TEMP") {
+        index = skip_ascii_whitespace(create_sql, next);
+    }
+
+    index = consume_keyword(create_sql, index, "TABLE").ok_or_else(|| {
+        PatchworksError::InvalidState(
+            "CREATE TABLE SQL did not contain TABLE while normalizing inspection output".to_owned(),
+        )
+    })?;
+    index = skip_ascii_whitespace(create_sql, index);
+
+    if let Some(next) = consume_keyword(create_sql, index, "IF") {
+        index = skip_ascii_whitespace(create_sql, next);
+        index = consume_keyword(create_sql, index, "NOT").ok_or_else(|| {
+            PatchworksError::InvalidState(
+                "CREATE TABLE SQL had IF without NOT while normalizing inspection output"
+                    .to_owned(),
+            )
+        })?;
+        index = skip_ascii_whitespace(create_sql, index);
+        index = consume_keyword(create_sql, index, "EXISTS").ok_or_else(|| {
+            PatchworksError::InvalidState(
+                "CREATE TABLE SQL had IF NOT without EXISTS while normalizing inspection output"
+                    .to_owned(),
+            )
+        })?;
+        index = skip_ascii_whitespace(create_sql, index);
+    }
+
+    Ok(index)
+}
+
+fn create_table_name_end(create_sql: &str, start: usize) -> Result<usize> {
+    let bytes = create_sql.as_bytes();
+    let mut index = start;
+    let mut quoted_by: Option<u8> = None;
+
+    while let Some(&byte) = bytes.get(index) {
+        if let Some(quote) = quoted_by {
+            if byte == quote {
+                if matches!(quote, b'"' | b'`') && bytes.get(index + 1) == Some(&quote) {
+                    index += 2;
+                    continue;
+                }
+                quoted_by = None;
+            }
+            index += 1;
+            continue;
+        }
+
+        match byte {
+            b'"' => quoted_by = Some(b'"'),
+            b'`' => quoted_by = Some(b'`'),
+            b'[' => quoted_by = Some(b']'),
+            b'(' => break,
+            _ if byte.is_ascii_whitespace() => break,
+            _ => {}
+        }
+        index += 1;
+    }
+
+    if index == start {
+        Err(PatchworksError::InvalidState(
+            "CREATE TABLE SQL is missing a table name while normalizing inspection output"
+                .to_owned(),
+        ))
+    } else {
+        Ok(index)
+    }
+}
+
+fn skip_ascii_whitespace(sql: &str, mut index: usize) -> usize {
+    while let Some(byte) = sql.as_bytes().get(index) {
+        if byte.is_ascii_whitespace() {
+            index += 1;
+        } else {
+            break;
+        }
+    }
+    index
+}
+
+fn consume_keyword(sql: &str, index: usize, keyword: &str) -> Option<usize> {
+    let end = index.checked_add(keyword.len())?;
+    let slice = sql.get(index..end)?;
+    if !slice.eq_ignore_ascii_case(keyword) {
+        return None;
+    }
+
+    match sql[end..].chars().next() {
+        Some(ch) if !ch.is_ascii_whitespace() => None,
+        _ => Some(end),
     }
 }
 

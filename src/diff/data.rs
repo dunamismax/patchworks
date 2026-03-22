@@ -8,7 +8,6 @@ use rusqlite::Rows;
 
 use crate::db::inspector::{
     compare_sql_values, compare_value_slices, open_read_only, quote_identifier, read_value_row,
-    sql_value_from_ref,
 };
 use crate::db::types::{
     DatabaseSummary, DiffStats, RowModification, SqlValue, TableDataDiff, TableInfo,
@@ -22,6 +21,33 @@ const ROWID_ALIAS: &str = "__patchworks_rowid";
 struct StreamRow {
     pk_values: Vec<SqlValue>,
     row_values: Vec<SqlValue>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum IdentityExpr {
+    RowId,
+    Column(String),
+}
+
+impl IdentityExpr {
+    fn select_sql(&self, alias: Option<&str>) -> String {
+        let expression = match self {
+            Self::RowId => "rowid".to_owned(),
+            Self::Column(column) => quote_identifier(column),
+        };
+
+        match alias {
+            Some(alias) => format!("{expression} AS {}", quote_identifier(alias)),
+            None => expression,
+        }
+    }
+
+    fn order_sql(&self) -> String {
+        match self {
+            Self::RowId => "rowid".to_owned(),
+            Self::Column(column) => quote_identifier(column),
+        }
+    }
 }
 
 /// Computes row-level diffs for all shared tables between two databases.
@@ -63,7 +89,7 @@ pub fn diff_table(
     let mut warnings = Vec::new();
     if !same_primary_key {
         warnings.push(
-            "No shared primary key was found. Falling back to rowid comparison, which may be unreliable after deletes and reinserts."
+            "No shared primary key was found. Falling back to table-local row identity (rowid when available, otherwise each table's declared primary key), which may be unreliable after deletes, reinserts, or primary-key changes."
                 .to_owned(),
         );
     }
@@ -80,10 +106,22 @@ pub fn diff_table(
     } else {
         common_columns.clone()
     };
-    let pk_columns = if same_primary_key {
-        left_table.primary_key.clone()
+    let (left_identity, right_identity, identity_embedded_in_values) = if same_primary_key {
+        let identity = left_table
+            .primary_key
+            .iter()
+            .cloned()
+            .map(IdentityExpr::Column)
+            .collect::<Vec<_>>();
+        (identity.clone(), identity, true)
+    } else if table_supports_rowid(left_table) && table_supports_rowid(right_table) {
+        (vec![IdentityExpr::RowId], vec![IdentityExpr::RowId], false)
     } else {
-        vec![ROWID_ALIAS.to_owned()]
+        (
+            fallback_identity_exprs(left_table)?,
+            fallback_identity_exprs(right_table)?,
+            false,
+        )
     };
 
     let left_connection = open_read_only(left_path)?;
@@ -92,14 +130,14 @@ pub fn diff_table(
     let left_sql = build_stream_sql(
         left_table,
         &comparison_columns,
-        &pk_columns,
-        same_primary_key,
+        &left_identity,
+        identity_embedded_in_values,
     );
     let right_sql = build_stream_sql(
         right_table,
         &comparison_columns,
-        &pk_columns,
-        same_primary_key,
+        &right_identity,
+        identity_embedded_in_values,
     );
 
     let mut left_statement = left_connection.prepare(&left_sql)?;
@@ -109,14 +147,14 @@ pub fn diff_table(
     let mut left_current = next_stream_row(
         &mut left_rows,
         &comparison_columns,
-        &pk_columns,
-        same_primary_key,
+        &left_identity,
+        identity_embedded_in_values,
     )?;
     let mut right_current = next_stream_row(
         &mut right_rows,
         &comparison_columns,
-        &pk_columns,
-        same_primary_key,
+        &right_identity,
+        identity_embedded_in_values,
     )?;
 
     let mut added_rows = Vec::new();
@@ -140,8 +178,8 @@ pub fn diff_table(
                         left_current = next_stream_row(
                             &mut left_rows,
                             &comparison_columns,
-                            &pk_columns,
-                            same_primary_key,
+                            &left_identity,
+                            identity_embedded_in_values,
                         )?;
                     }
                     Ordering::Greater => {
@@ -150,8 +188,8 @@ pub fn diff_table(
                         right_current = next_stream_row(
                             &mut right_rows,
                             &comparison_columns,
-                            &pk_columns,
-                            same_primary_key,
+                            &right_identity,
+                            identity_embedded_in_values,
                         )?;
                     }
                     Ordering::Equal => {
@@ -183,14 +221,14 @@ pub fn diff_table(
                         left_current = next_stream_row(
                             &mut left_rows,
                             &comparison_columns,
-                            &pk_columns,
-                            same_primary_key,
+                            &left_identity,
+                            identity_embedded_in_values,
                         )?;
                         right_current = next_stream_row(
                             &mut right_rows,
                             &comparison_columns,
-                            &pk_columns,
-                            same_primary_key,
+                            &right_identity,
+                            identity_embedded_in_values,
                         )?;
                     }
                 }
@@ -202,8 +240,8 @@ pub fn diff_table(
                 left_current = next_stream_row(
                     &mut left_rows,
                     &comparison_columns,
-                    &pk_columns,
-                    same_primary_key,
+                    &left_identity,
+                    identity_embedded_in_values,
                 )?;
             }
             (None, Some(right_row)) => {
@@ -212,8 +250,8 @@ pub fn diff_table(
                 right_current = next_stream_row(
                     &mut right_rows,
                     &comparison_columns,
-                    &pk_columns,
-                    same_primary_key,
+                    &right_identity,
+                    identity_embedded_in_values,
                 )?;
             }
             (None, None) => break,
@@ -248,59 +286,58 @@ fn shared_column_names(left: &TableInfo, right: &TableInfo) -> Vec<String> {
 fn build_stream_sql(
     table: &TableInfo,
     comparison_columns: &[String],
-    pk_columns: &[String],
-    same_primary_key: bool,
+    identity_columns: &[IdentityExpr],
+    identity_embedded_in_values: bool,
 ) -> String {
-    if same_primary_key {
-        format!(
-            "SELECT {} FROM {} ORDER BY {}",
-            comparison_columns
-                .iter()
-                .map(|column| quote_identifier(column))
-                .collect::<Vec<_>>()
-                .join(", "),
-            quote_identifier(&table.name),
-            pk_columns
-                .iter()
-                .map(|column| quote_identifier(column))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    } else if comparison_columns.is_empty() {
-        format!(
-            "SELECT rowid AS {}, rowid AS {} FROM {} ORDER BY rowid",
-            quote_identifier(ROWID_ALIAS),
-            quote_identifier("__patchworks_value_rowid"),
-            quote_identifier(&table.name)
-        )
+    let mut select_terms = if identity_embedded_in_values {
+        comparison_columns
+            .iter()
+            .map(|column| quote_identifier(column))
+            .collect::<Vec<_>>()
     } else {
-        format!(
-            "SELECT rowid AS {}, {} FROM {} ORDER BY rowid",
-            quote_identifier(ROWID_ALIAS),
-            comparison_columns
-                .iter()
-                .map(|column| quote_identifier(column))
-                .collect::<Vec<_>>()
-                .join(", "),
-            quote_identifier(&table.name)
-        )
-    }
+        identity_columns
+            .iter()
+            .enumerate()
+            .map(|(index, column)| column.select_sql(Some(&identity_alias(index))))
+            .collect::<Vec<_>>()
+    };
+    select_terms.extend(
+        comparison_columns
+            .iter()
+            .map(|column| quote_identifier(column)),
+    );
+
+    format!(
+        "SELECT {} FROM {} ORDER BY {}",
+        select_terms.join(", "),
+        quote_identifier(&table.name),
+        identity_columns
+            .iter()
+            .map(IdentityExpr::order_sql)
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 fn next_stream_row(
     rows: &mut Rows<'_>,
     comparison_columns: &[String],
-    pk_columns: &[String],
-    same_primary_key: bool,
+    identity_columns: &[IdentityExpr],
+    identity_embedded_in_values: bool,
 ) -> Result<Option<StreamRow>> {
     let Some(row) = rows.next()? else {
         return Ok(None);
     };
 
-    if same_primary_key {
+    if identity_embedded_in_values {
         let row_values = read_value_row(row, comparison_columns.len(), 0)?;
-        let mut pk_values = Vec::with_capacity(pk_columns.len());
-        for key in pk_columns {
+        let mut pk_values = Vec::with_capacity(identity_columns.len());
+        for key in identity_columns {
+            let IdentityExpr::Column(key) = key else {
+                return Err(PatchworksError::InvalidState(
+                    "embedded diff identity cannot use rowid".to_owned(),
+                ));
+            };
             let index = comparison_columns
                 .iter()
                 .position(|column| column == key)
@@ -317,20 +354,41 @@ fn next_stream_row(
             row_values,
         }))
     } else {
-        let pk_value = sql_value_from_ref(row.get_ref(0)?);
-        let value_count = if comparison_columns.is_empty() {
-            1
-        } else {
-            comparison_columns.len()
-        };
-        let row_values = read_value_row(
-            row,
-            value_count,
-            1.min(row.as_ref().column_count().saturating_sub(1)),
-        )?;
+        let pk_values = read_value_row(row, identity_columns.len(), 0)?;
+        let row_values = read_value_row(row, comparison_columns.len(), identity_columns.len())?;
         Ok(Some(StreamRow {
-            pk_values: vec![pk_value],
+            pk_values,
             row_values,
         }))
     }
+}
+
+fn fallback_identity_exprs(table: &TableInfo) -> Result<Vec<IdentityExpr>> {
+    if !table.primary_key.is_empty() {
+        Ok(table
+            .primary_key
+            .iter()
+            .cloned()
+            .map(IdentityExpr::Column)
+            .collect())
+    } else if table_supports_rowid(table) {
+        Ok(vec![IdentityExpr::RowId])
+    } else {
+        Err(PatchworksError::InvalidState(format!(
+            "table `{}` has no shared primary key and no usable row identity for diffing",
+            table.name
+        )))
+    }
+}
+
+fn table_supports_rowid(table: &TableInfo) -> bool {
+    table
+        .create_sql
+        .as_ref()
+        .map(|sql| !sql.to_ascii_uppercase().contains("WITHOUT ROWID"))
+        .unwrap_or(true)
+}
+
+fn identity_alias(index: usize) -> String {
+    format!("{ROWID_ALIAS}_{index}")
 }

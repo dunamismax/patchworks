@@ -1,6 +1,6 @@
 # Patchworks Build Plan
 
-Last updated: 2026-03-21
+Last updated: 2026-03-22
 Status: active development, post-MVP hardening
 Primary surface: native Rust desktop app via `egui`/`eframe`
 Package: crates.io `patchworks` (`0.1.0`)
@@ -49,6 +49,7 @@ What Patchworks currently does:
 - Compares a live database against a saved snapshot.
 - Generates SQL intended to transform the left database into the right database.
 - Preserves tracked indexes and triggers in generated SQL.
+- Applies generated SQL safely even when the destination connection starts with `PRAGMA foreign_keys=ON` by guarding the migration batch and using a temporary-table rebuild path for schema-changed tables.
 - Supports a small CLI surface for app launch plus `--snapshot <db>`.
 
 What Patchworks does not currently do:
@@ -64,31 +65,31 @@ What Patchworks does not currently do:
 
 Most recent recorded verification baseline:
 
-- Verified on: 2026-03-21
+- Verified on: 2026-03-22
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
-- Base commit at start of that verification pass: `8824de772ce03e46b2de9fd95d194cfff326b730`
+- Base commit at start of that verification pass: `e91a870e8a9ed3432a0540c90f309c232d3da98c`
 - Host used for that verification pass: macOS arm64 (`Darwin 25.4.0`)
 - Last full code review recorded in this file: 2026-03-20
 
 ### Currently recorded verified commands
 
-Re-verified on 2026-03-21:
-
-- `cargo metadata --no-deps --format-version 1`
-- `cargo package --allow-dirty --list`
-- `cargo package --allow-dirty`
-- `cargo test`
-
-Still recorded from the 2026-03-20 verification baseline, but not re-run in the 2026-03-21 packaging pass:
+Re-verified on 2026-03-22:
 
 - `cargo build`
+- `cargo test`
 - `cargo nextest run`
 - `cargo fmt --all --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo bench --no-run`
 - `cargo deny check`
 - `cargo run -- --help`
+
+Still recorded from the 2026-03-21 packaging pass, but not re-run in the 2026-03-22 diff/export hardening pass:
+
+- `cargo metadata --no-deps --format-version 1`
+- `cargo package --allow-dirty --list`
+- `cargo package --allow-dirty`
 - `cargo run -- --snapshot <db>`
 
 Supported by the codebase but not fully re-verified in the recorded passes above:
@@ -179,9 +180,10 @@ When docs and code disagree, code and tests win. Update docs immediately rather 
 
 - Diffing is backgrounded; database inspection and some refresh work are still synchronous.
 - Row diffs only run for tables present on both sides.
-- Row diff prefers shared primary keys and falls back to `rowid` with warnings.
+- Row diff prefers shared primary keys and falls back to table-local row identity (`rowid` when available, otherwise each table's declared primary key) with warnings.
 - Sorted pagination adds a deterministic primary-key or `rowid` tie-breaker.
 - SQL export favors correctness over minimal, hand-tuned migration output.
+- SQL export temporarily disables SQLite foreign-key enforcement for the generated migration batch, rebuilds schema-changed tables through a temporary replacement table, and then restores `PRAGMA foreign_keys=ON`; this keeps export application safe when the caller begins with foreign-key enforcement enabled.
 - Trigger handling is intentionally conservative: affected triggers are recreated after migration DML to avoid firing left-side trigger logic during export application.
 
 ## Working Rules
@@ -407,6 +409,7 @@ Exit criteria:
 - 2026-03-20: Re-reviewed the full repository after the follow-up implementation and confirmed the strongest remaining risks were synchronous inspection, unbounded export memory growth, Linux-only CI, simple snapshot-store connection management, and best-effort handling of live/WAL-backed databases. Verified with: `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, plus source review across `src/`, `tests/`, `.github/workflows/ci.yml`, and `deny.toml`. Next: prioritize async loading and streaming export design before feature breadth.
 - 2026-03-21: Added crates.io-facing metadata in `Cargo.toml`, updated `README.md` for packaged-readme correctness and local publishability guidance, and recorded the successful local package validation path. Verified with: `cargo metadata --no-deps --format-version 1`, `cargo package --allow-dirty --list`, `cargo package --allow-dirty`, `cargo test`. Next: keep BUILD, README, and future release workflow aligned with the actual package/install story.
 - 2026-03-21: Reframed `BUILD.md` into a phase-based execution plan with clearer source-of-truth mapping, architecture flow, quality gates, risks, and next moves while preserving recorded verification history. Verified with: repo document and source-tree audit of `BUILD.md`, `README.md`, `AGENTS.md`, `Cargo.toml`, `src/`, `tests/`, and `benches/`. Next: update this plan in lockstep with the next real code or verification pass.
+- 2026-03-22: Hardened row diff and SQL export around SQLite edge cases: row diff no longer assumes `rowid` exists when shared primary keys diverge, SQL export now uses a temporary-table rebuild path plus foreign-key guarding so exports apply cleanly when `PRAGMA foreign_keys=ON`, and added regression coverage for WITHOUT ROWID fallback and FK-enforced export application. Verified with: `cargo test --test diff_tests`, `cargo fmt --all --check`, `cargo build`, `cargo test`, `cargo nextest run`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo bench --no-run`, `cargo deny check`, `cargo run -- --help`. Next: keep Phase 3 focused on async inspection/page loading, explicit progress reporting, and bounded-memory export generation.
 
 ## Decision Log
 
@@ -418,3 +421,4 @@ Exit criteria:
 - 2026-03-20: Indexes and triggers are tracked from `sqlite_master` and preserved in generated SQL - this improves migration fidelity without requiring dedicated UI panels first - schema fidelity can advance ahead of UI completeness.
 - 2026-03-20: Diff computation runs on a background thread while inspection still remains synchronous - this was the lowest-friction responsiveness win already landed - further UI-thread loading work is still required and remains active scope.
 - 2026-03-21: Crate metadata and packaged README content were aligned for crates.io and local packaging - this makes `cargo package --allow-dirty` a recorded success path - future docs changes must keep packaged links and publishability checks honest.
+- 2026-03-22: SQL export now prioritizes SQLite foreign-key safety over preserving the original `CREATE TABLE` header text byte-for-byte - schema-changed tables are rebuilt via a temporary replacement table and the generated migration batch guards `PRAGMA foreign_keys` around the operation - inspection normalizes simple table-header quoting so semantic comparisons stay stable even though SQLite rewrites renamed table definitions.
