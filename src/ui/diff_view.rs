@@ -1,17 +1,18 @@
 //! Row diff rendering.
 
-use egui::{Color32, Grid, RichText, ScrollArea, Spinner, Ui};
+use egui::{Color32, Grid, RichText, ScrollArea, Ui};
 
 use crate::db::types::TableDataDiff;
 use crate::state::workspace::{DiffDisplayMode, DiffState};
+use crate::ui::progress;
 
 /// Renders row-level diff results.
 pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
-    if diff_state.is_computing {
-        ui.horizontal(|ui| {
-            ui.add(Spinner::new());
-            ui.label("Computing database diff in the background...");
-        });
+    if let Some(progress_state) = &diff_state.progress {
+        progress::render_progress(ui, progress_state);
+        ui.separator();
+    } else if diff_state.is_computing {
+        ui.label("Computing database diff in the background...");
         ui.separator();
     }
 

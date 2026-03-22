@@ -45,7 +45,7 @@ This file is the secondary agent-oriented project memory for Patchworks. `BUILD.
 - Data diffing uses a merge-style streaming compare for shared tables and falls back to `rowid` when necessary.
 - SQL export generates transactional migration scripts and rebuilds modified tables from the right-side schema.
 - Snapshot storage copies databases into `~/.patchworks/snapshots/` and tracks metadata in `~/.patchworks/patchworks.db`.
-- The egui app shell includes file loading, table browsing, background diff execution, schema diff, snapshots, and SQL export preview.
+- The egui app shell includes file loading, table browsing, staged background-load and diff progress, schema diff, snapshots, and SQL export preview.
 - CLI modes support empty launch, one-file inspect, two-file diff, and snapshot creation.
 - Criterion benchmarks now cover paged table reads, row-diff streaming, and end-to-end diff generation.
 - Proptest coverage now checks schema classification invariants, row-diff accounting invariants, and SQL export round-trips.
@@ -64,7 +64,7 @@ This file is the secondary agent-oriented project memory for Patchworks. `BUILD.
 
 - SQL export currently prioritizes correctness over minimality, so modified schemas are rebuilt from the right-hand database definition.
 - The diff UI is functional but intentionally lightweight and can be refined further.
-- Background diff execution is fire-and-forget today; there is no progress reporting or explicit cancellation beyond replacing the pending request.
+- Background work now reports coarse staged progress, but there is still no explicit cancel button; the current architecture only supersedes pending requests by dropping their receivers.
 - Snapshot storage currently uses `~/.patchworks`.
 - `cargo bench --no-run` is slower than the rest of the local checks because the bundled SQLite C source is compiled in release mode for the bench profile.
 - `BUILD.md` is still the primary operational handoff and should be read before touching export logic or verification workflows.

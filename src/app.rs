@@ -6,14 +6,14 @@ use std::time::Duration;
 
 use eframe::egui;
 
-use crate::db::differ::{diff_databases, DatabaseDiff};
-use crate::db::inspector::{
-    inspect_database_with_page, read_table_page_for_table, InitialInspection,
+use crate::db::differ::{
+    diff_databases_with_progress, DatabaseDiff, DiffProgress, DiffProgressPhase,
 };
+use crate::db::inspector::{inspect_database, read_table_page_for_table};
 use crate::db::snapshot::SnapshotStore;
 use crate::db::types::{Snapshot, TableInfo, TablePage};
-use crate::error::Result;
-use crate::state::workspace::{DatabasePaneState, WorkspaceState, WorkspaceView};
+use crate::error::{PatchworksError, Result};
+use crate::state::workspace::{DatabasePaneState, ProgressState, WorkspaceState, WorkspaceView};
 use crate::ui;
 
 /// Startup options derived from CLI arguments.
@@ -85,6 +85,11 @@ impl PatchworksApp {
             pane.path = Some(path.clone());
             pane.is_loading = true;
             pane.is_loading_table = false;
+            pane.progress = Some(ProgressState::new(
+                "Inspecting database schema and table counts...",
+                0,
+                Some(3),
+            ));
             pane.summary = None;
             pane.selected_table = None;
             pane.table_page = None;
@@ -101,13 +106,55 @@ impl PatchworksApp {
         );
 
         std::thread::spawn(move || {
-            let result = inspect_database_with_page(&path, &query)
-                .map(|inspection| PaneLoadPayload {
-                    inspection,
-                    snapshots: store.list_snapshots(&path).unwrap_or_default(),
+            let result = (|| -> std::result::Result<PaneLoadPayload, String> {
+                let _ = sender.send(PaneLoadTaskMessage::Progress(ProgressState::new(
+                    "Inspecting database schema and table counts...",
+                    0,
+                    Some(3),
+                )));
+                let summary = inspect_database(&path).map_err(|error| error.to_string())?;
+                let selected_table = summary.tables.first().map(|table| table.name.clone());
+                let table_page = if let Some(table_name) = &selected_table {
+                    let table = summary
+                        .tables
+                        .iter()
+                        .find(|table| table.name == *table_name)
+                        .cloned()
+                        .ok_or_else(|| {
+                            PatchworksError::MissingTable {
+                                table: table_name.clone(),
+                                path: path.clone(),
+                            }
+                            .to_string()
+                        })?;
+                    let _ = sender.send(PaneLoadTaskMessage::Progress(ProgressState::new(
+                        format!("Loading initial table page for `{table_name}`..."),
+                        1,
+                        Some(3),
+                    )));
+                    Some(
+                        read_table_page_for_table(&path, &table, &query)
+                            .map_err(|error| error.to_string())?,
+                    )
+                } else {
+                    None
+                };
+
+                let _ = sender.send(PaneLoadTaskMessage::Progress(ProgressState::new(
+                    "Loading snapshots...",
+                    2,
+                    Some(3),
+                )));
+                let snapshots = store.list_snapshots(&path).unwrap_or_default();
+
+                Ok(PaneLoadPayload {
+                    summary,
+                    selected_table,
+                    table_page,
+                    snapshots,
                 })
-                .map_err(|error| error.to_string());
-            let _ = sender.send(result);
+            })();
+            let _ = sender.send(PaneLoadTaskMessage::Complete(Box::new(result)));
         });
     }
 
@@ -118,6 +165,7 @@ impl PatchworksApp {
         let Some(selected_table) = self.pane(side).selected_table.clone() else {
             let pane = self.pane_mut(side);
             pane.is_loading_table = false;
+            pane.progress = None;
             pane.table_page = None;
             self.set_running_table_load(side, None);
             return;
@@ -126,6 +174,7 @@ impl PatchworksApp {
         let Some(table) = self.lookup_selected_table(side, &selected_table) else {
             let pane = self.pane_mut(side);
             pane.is_loading_table = false;
+            pane.progress = None;
             pane.table_page = None;
             pane.error = Some(format!(
                 "Selected table `{selected_table}` no longer exists in {}.",
@@ -140,6 +189,14 @@ impl PatchworksApp {
         {
             let pane = self.pane_mut(side);
             pane.is_loading_table = true;
+            pane.progress = Some(ProgressState::new(
+                format!(
+                    "Loading table `{selected_table}` page {}...",
+                    query.page + 1
+                ),
+                0,
+                Some(1),
+            ));
             pane.table_page = None;
             pane.error = None;
         }
@@ -149,16 +206,24 @@ impl PatchworksApp {
             side,
             Some(RunningTableLoadTask {
                 request: TableLoadRequest {
-                    table_name: selected_table,
+                    table_name: selected_table.clone(),
                 },
                 receiver,
             }),
         );
 
         std::thread::spawn(move || {
+            let _ = sender.send(TableLoadTaskMessage::Progress(ProgressState::new(
+                format!(
+                    "Loading table `{selected_table}` page {}...",
+                    query.page + 1
+                ),
+                0,
+                Some(1),
+            )));
             let result =
                 read_table_page_for_table(&path, &table, &query).map_err(|error| error.to_string());
-            let _ = sender.send(result);
+            let _ = sender.send(TableLoadTaskMessage::Complete(result));
         });
     }
 
@@ -185,6 +250,11 @@ impl PatchworksApp {
         self.running_diff = Some(RunningDiffTask { request, receiver });
         self.workspace.diff.result = None;
         self.workspace.diff.is_computing = true;
+        self.workspace.diff.progress = Some(ProgressState::new(
+            "Inspecting left database schema and table counts...",
+            0,
+            None,
+        ));
         self.workspace.diff.selected_table = None;
         self.workspace.diff.error = None;
         self.workspace.active_view = WorkspaceView::Diff;
@@ -195,8 +265,11 @@ impl PatchworksApp {
         ));
 
         std::thread::spawn(move || {
-            let result = diff_databases(&left, &right).map_err(|error| error.to_string());
-            let _ = sender.send(result);
+            let result = diff_databases_with_progress(&left, &right, |progress| {
+                let _ = sender.send(DiffTaskMessage::Progress(progress));
+            })
+            .map_err(|error| error.to_string());
+            let _ = sender.send(DiffTaskMessage::Complete(Box::new(result)));
         });
     }
 
@@ -204,6 +277,7 @@ impl PatchworksApp {
         self.running_diff = None;
         self.workspace.diff.result = None;
         self.workspace.diff.is_computing = false;
+        self.workspace.diff.progress = None;
         self.workspace.diff.selected_table = None;
         self.workspace.diff.error = None;
     }
@@ -217,155 +291,185 @@ impl PatchworksApp {
     }
 
     fn poll_running_pane_load(&mut self, side: PaneSide, ctx: &egui::Context) {
-        let Some(result) = self
-            .running_pane_load(side)
-            .as_ref()
-            .map(|task| task.receiver.try_recv())
-        else {
-            return;
-        };
-
-        match result {
-            Ok(result) => {
-                let Some(task) = self.running_pane_load_mut(side).take() else {
-                    return;
-                };
-                let pane = self.pane_mut(side);
-                pane.is_loading = false;
-                pane.is_loading_table = false;
-                match result {
-                    Ok(payload) => {
-                        pane.path = Some(task.request.path.clone());
-                        pane.summary = Some(payload.inspection.summary);
-                        pane.selected_table = payload.inspection.selected_table;
-                        pane.table_page = payload.inspection.table_page;
-                        pane.snapshots = payload.snapshots;
-                        pane.error = None;
-                        self.workspace.status_message =
-                            Some(format!("Loaded {}", task.request.path.display()));
-                    }
-                    Err(error) => {
-                        pane.summary = None;
-                        pane.selected_table = None;
-                        pane.table_page = None;
-                        pane.snapshots.clear();
-                        pane.error = Some(error.clone());
-                        self.workspace.status_message =
-                            Some(format!("Failed to load database: {error}"));
-                    }
+        loop {
+            let message = match self.running_pane_load(side).as_ref() {
+                Some(task) => task.receiver.try_recv(),
+                None => return,
+            };
+            match message {
+                Ok(PaneLoadTaskMessage::Progress(progress)) => {
+                    let pane = self.pane_mut(side);
+                    pane.progress = Some(progress.clone());
+                    self.workspace.status_message = Some(progress.label);
                 }
-            }
-            Err(TryRecvError::Empty) => {
-                ctx.request_repaint_after(Duration::from_millis(50));
-            }
-            Err(TryRecvError::Disconnected) => {
-                self.set_running_pane_load(side, None);
-                let pane = self.pane_mut(side);
-                pane.is_loading = false;
-                pane.is_loading_table = false;
-                pane.summary = None;
-                pane.selected_table = None;
-                pane.table_page = None;
-                pane.snapshots.clear();
-                pane.error = Some("Database loader stopped unexpectedly.".to_owned());
-                self.workspace.status_message =
-                    Some("Failed to load database: worker stopped unexpectedly.".to_owned());
+                Ok(PaneLoadTaskMessage::Complete(result)) => {
+                    let Some(task) = self.running_pane_load_mut(side).take() else {
+                        return;
+                    };
+                    let pane = self.pane_mut(side);
+                    pane.is_loading = false;
+                    pane.is_loading_table = false;
+                    pane.progress = None;
+                    match *result {
+                        Ok(payload) => {
+                            pane.path = Some(task.request.path.clone());
+                            pane.summary = Some(payload.summary);
+                            pane.selected_table = payload.selected_table;
+                            pane.table_page = payload.table_page;
+                            pane.snapshots = payload.snapshots;
+                            pane.error = None;
+                            self.workspace.status_message =
+                                Some(format!("Loaded {}", task.request.path.display()));
+                        }
+                        Err(error) => {
+                            pane.summary = None;
+                            pane.selected_table = None;
+                            pane.table_page = None;
+                            pane.snapshots.clear();
+                            pane.error = Some(error.clone());
+                            self.workspace.status_message =
+                                Some(format!("Failed to load database: {error}"));
+                        }
+                    }
+                    return;
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(50));
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.set_running_pane_load(side, None);
+                    let pane = self.pane_mut(side);
+                    pane.is_loading = false;
+                    pane.is_loading_table = false;
+                    pane.progress = None;
+                    pane.summary = None;
+                    pane.selected_table = None;
+                    pane.table_page = None;
+                    pane.snapshots.clear();
+                    pane.error = Some("Database loader stopped unexpectedly.".to_owned());
+                    self.workspace.status_message =
+                        Some("Failed to load database: worker stopped unexpectedly.".to_owned());
+                    return;
+                }
             }
         }
     }
 
     fn poll_running_table_load(&mut self, side: PaneSide, ctx: &egui::Context) {
-        let Some(result) = self
-            .running_table_load(side)
-            .as_ref()
-            .map(|task| task.receiver.try_recv())
-        else {
-            return;
-        };
-
-        match result {
-            Ok(result) => {
-                let Some(task) = self.running_table_load_mut(side).take() else {
-                    return;
-                };
-                let pane = self.pane_mut(side);
-                pane.is_loading_table = false;
-                match result {
-                    Ok(page) => {
-                        pane.selected_table = Some(task.request.table_name);
-                        pane.table_page = Some(page);
-                        pane.error = None;
-                    }
-                    Err(error) => {
-                        pane.table_page = None;
-                        pane.error = Some(error.clone());
-                        self.workspace.status_message =
-                            Some(format!("Failed to load table page: {error}"));
-                    }
+        loop {
+            let message = match self.running_table_load(side).as_ref() {
+                Some(task) => task.receiver.try_recv(),
+                None => return,
+            };
+            match message {
+                Ok(TableLoadTaskMessage::Progress(progress)) => {
+                    let pane = self.pane_mut(side);
+                    pane.progress = Some(progress.clone());
+                    self.workspace.status_message = Some(progress.label);
                 }
-            }
-            Err(TryRecvError::Empty) => {
-                ctx.request_repaint_after(Duration::from_millis(50));
-            }
-            Err(TryRecvError::Disconnected) => {
-                self.set_running_table_load(side, None);
-                let pane = self.pane_mut(side);
-                pane.is_loading_table = false;
-                pane.table_page = None;
-                pane.error = Some("Table loader stopped unexpectedly.".to_owned());
-                self.workspace.status_message =
-                    Some("Failed to load table page: worker stopped unexpectedly.".to_owned());
+                Ok(TableLoadTaskMessage::Complete(result)) => {
+                    let Some(task) = self.running_table_load_mut(side).take() else {
+                        return;
+                    };
+                    let pane = self.pane_mut(side);
+                    pane.is_loading_table = false;
+                    pane.progress = None;
+                    match result {
+                        Ok(page) => {
+                            let page_number = page.page + 1;
+                            pane.selected_table = Some(task.request.table_name.clone());
+                            pane.table_page = Some(page);
+                            pane.error = None;
+                            self.workspace.status_message = Some(format!(
+                                "Loaded table `{}` page {}.",
+                                task.request.table_name, page_number
+                            ));
+                        }
+                        Err(error) => {
+                            pane.table_page = None;
+                            pane.error = Some(error.clone());
+                            self.workspace.status_message =
+                                Some(format!("Failed to load table page: {error}"));
+                        }
+                    }
+                    return;
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(50));
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.set_running_table_load(side, None);
+                    let pane = self.pane_mut(side);
+                    pane.is_loading_table = false;
+                    pane.progress = None;
+                    pane.table_page = None;
+                    pane.error = Some("Table loader stopped unexpectedly.".to_owned());
+                    self.workspace.status_message =
+                        Some("Failed to load table page: worker stopped unexpectedly.".to_owned());
+                    return;
+                }
             }
         }
     }
 
     fn poll_running_diff(&mut self, ctx: &egui::Context) {
-        let Some(result) = self
-            .running_diff
-            .as_ref()
-            .map(|task| task.receiver.try_recv())
-        else {
-            return;
-        };
-
-        match result {
-            Ok(result) => {
-                let Some(task) = self.running_diff.take() else {
-                    return;
-                };
-                self.workspace.diff.is_computing = false;
-                match result {
-                    Ok(diff) => {
-                        self.workspace.diff.selected_table = diff
-                            .data_diffs
-                            .first()
-                            .map(|table| table.table_name.clone());
-                        self.workspace.diff.result = Some(diff);
-                        self.workspace.diff.error = None;
-                        self.workspace.active_view = WorkspaceView::Diff;
-                        self.workspace.status_message = Some(format!(
-                            "Computed database diff for {} and {}.",
-                            task.request.left_path.display(),
-                            task.request.right_path.display()
-                        ));
-                    }
-                    Err(error) => {
-                        self.workspace.diff.result = None;
-                        self.workspace.diff.error = Some(error.clone());
-                        self.workspace.status_message = Some(format!("Diff failed: {error}"));
-                    }
+        loop {
+            let message = match self.running_diff.as_ref() {
+                Some(task) => task.receiver.try_recv(),
+                None => return,
+            };
+            match message {
+                Ok(DiffTaskMessage::Progress(progress)) => {
+                    let progress = map_diff_progress(progress);
+                    self.workspace.diff.progress = Some(progress.clone());
+                    self.workspace.status_message = Some(progress.label);
                 }
-            }
-            Err(TryRecvError::Empty) => {
-                ctx.request_repaint_after(Duration::from_millis(50));
-            }
-            Err(TryRecvError::Disconnected) => {
-                self.running_diff = None;
-                self.workspace.diff.is_computing = false;
-                self.workspace.diff.result = None;
-                self.workspace.diff.error = Some("Diff worker stopped unexpectedly.".to_owned());
-                self.workspace.status_message =
-                    Some("Diff failed: worker stopped unexpectedly.".to_owned());
+                Ok(DiffTaskMessage::Complete(result)) => {
+                    let Some(task) = self.running_diff.take() else {
+                        return;
+                    };
+                    self.workspace.diff.is_computing = false;
+                    self.workspace.diff.progress = None;
+                    match *result {
+                        Ok(diff) => {
+                            self.workspace.diff.selected_table = diff
+                                .data_diffs
+                                .first()
+                                .map(|table| table.table_name.clone());
+                            self.workspace.diff.result = Some(diff);
+                            self.workspace.diff.error = None;
+                            self.workspace.active_view = WorkspaceView::Diff;
+                            self.workspace.status_message = Some(format!(
+                                "Computed database diff for {} and {}.",
+                                task.request.left_path.display(),
+                                task.request.right_path.display()
+                            ));
+                        }
+                        Err(error) => {
+                            self.workspace.diff.result = None;
+                            self.workspace.diff.error = Some(error.clone());
+                            self.workspace.status_message = Some(format!("Diff failed: {error}"));
+                        }
+                    }
+                    return;
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(50));
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.running_diff = None;
+                    self.workspace.diff.is_computing = false;
+                    self.workspace.diff.progress = None;
+                    self.workspace.diff.result = None;
+                    self.workspace.diff.error =
+                        Some("Diff worker stopped unexpectedly.".to_owned());
+                    self.workspace.status_message =
+                        Some("Diff failed: worker stopped unexpectedly.".to_owned());
+                    return;
+                }
             }
         }
     }
@@ -596,7 +700,7 @@ enum PaneSide {
 #[derive(Debug)]
 struct RunningPaneLoadTask {
     request: PaneLoadRequest,
-    receiver: Receiver<PaneLoadTaskResult>,
+    receiver: Receiver<PaneLoadTaskMessage>,
 }
 
 #[derive(Clone, Debug)]
@@ -606,8 +710,15 @@ struct PaneLoadRequest {
 
 #[derive(Debug)]
 struct PaneLoadPayload {
-    inspection: InitialInspection,
+    summary: crate::db::types::DatabaseSummary,
+    selected_table: Option<String>,
+    table_page: Option<TablePage>,
     snapshots: Vec<Snapshot>,
+}
+
+enum PaneLoadTaskMessage {
+    Progress(ProgressState),
+    Complete(Box<PaneLoadTaskResult>),
 }
 
 type PaneLoadTaskResult = std::result::Result<PaneLoadPayload, String>;
@@ -615,7 +726,7 @@ type PaneLoadTaskResult = std::result::Result<PaneLoadPayload, String>;
 #[derive(Debug)]
 struct RunningTableLoadTask {
     request: TableLoadRequest,
-    receiver: Receiver<TableLoadTaskResult>,
+    receiver: Receiver<TableLoadTaskMessage>,
 }
 
 #[derive(Clone, Debug)]
@@ -623,12 +734,17 @@ struct TableLoadRequest {
     table_name: String,
 }
 
+enum TableLoadTaskMessage {
+    Progress(ProgressState),
+    Complete(TableLoadTaskResult),
+}
+
 type TableLoadTaskResult = std::result::Result<TablePage, String>;
 
 #[derive(Debug)]
 struct RunningDiffTask {
     request: DiffRequest,
-    receiver: Receiver<DiffTaskResult>,
+    receiver: Receiver<DiffTaskMessage>,
 }
 
 #[derive(Clone, Debug)]
@@ -637,7 +753,36 @@ struct DiffRequest {
     right_path: PathBuf,
 }
 
+enum DiffTaskMessage {
+    Progress(DiffProgress),
+    Complete(Box<DiffTaskResult>),
+}
+
 type DiffTaskResult = std::result::Result<DatabaseDiff, String>;
+
+fn map_diff_progress(progress: DiffProgress) -> ProgressState {
+    let label = match progress.phase {
+        DiffProgressPhase::InspectingLeft => {
+            "Inspecting left database schema and table counts...".to_owned()
+        }
+        DiffProgressPhase::InspectingRight => {
+            "Inspecting right database schema and table counts...".to_owned()
+        }
+        DiffProgressPhase::DiffingSchema => "Comparing schemas...".to_owned(),
+        DiffProgressPhase::DiffingTable {
+            table_name,
+            table_index,
+            total_tables,
+        } => format!(
+            "Diffing table `{table_name}` ({}/{})...",
+            table_index + 1,
+            total_tables
+        ),
+        DiffProgressPhase::GeneratingSqlExport => "Generating SQL export...".to_owned(),
+    };
+
+    ProgressState::new(label, progress.completed_steps, progress.total_steps)
+}
 
 #[cfg(test)]
 mod tests {
@@ -657,6 +802,14 @@ mod tests {
         app.load_left(fixture.left.clone())?;
 
         assert!(app.workspace.left.is_loading);
+        assert_eq!(
+            app.workspace.left.progress,
+            Some(ProgressState::new(
+                "Inspecting database schema and table counts...",
+                0,
+                Some(3),
+            ))
+        );
         assert!(app.workspace.left.summary.is_none());
         assert!(app.running_left_load.is_some());
 
@@ -678,6 +831,7 @@ mod tests {
             Some(1)
         );
         assert!(app.workspace.left.error.is_none());
+        assert!(app.workspace.left.progress.is_none());
         Ok(())
     }
 
@@ -699,6 +853,14 @@ mod tests {
         app.request_table_refresh(PaneSide::Left);
 
         assert!(app.workspace.left.is_loading_table);
+        assert_eq!(
+            app.workspace.left.progress,
+            Some(ProgressState::new(
+                "Loading table `widgets` page 1...",
+                0,
+                Some(1),
+            ))
+        );
         assert!(app.running_left_table_load.is_some());
         assert!(app.workspace.left.table_page.is_none());
 
@@ -713,6 +875,7 @@ mod tests {
         assert_eq!(page.table_name, "widgets");
         assert_eq!(page.rows.len(), 1);
         assert!(!app.workspace.left.is_loading_table);
+        assert!(app.workspace.left.progress.is_none());
         Ok(())
     }
 
@@ -763,8 +926,12 @@ mod tests {
         app.workspace.left.is_loading_table = true;
         app.workspace.left.table_page = None;
 
-        assert!(old_sender.send(Ok(old_page)).is_err());
-        assert!(new_sender.send(Ok(new_page)).is_ok());
+        assert!(old_sender
+            .send(TableLoadTaskMessage::Complete(Ok(old_page)))
+            .is_err());
+        assert!(new_sender
+            .send(TableLoadTaskMessage::Complete(Ok(new_page)))
+            .is_ok());
 
         app.poll_running_table_load(PaneSide::Left, &egui::Context::default());
 
@@ -776,6 +943,52 @@ mod tests {
             .expect("newest table page applied");
         assert_eq!(page.page, 1);
         assert!(!app.workspace.left.is_loading_table);
+        Ok(())
+    }
+
+    #[test]
+    fn poll_running_diff_applies_progress_updates() -> Result<()> {
+        let fixture = FixtureDbs::new()?;
+        let mut app = PatchworksApp::new(StartupOptions::default())?;
+        let (sender, receiver) = mpsc::channel();
+
+        app.running_diff = Some(RunningDiffTask {
+            request: DiffRequest {
+                left_path: fixture.left.clone(),
+                right_path: fixture.right.clone(),
+            },
+            receiver,
+        });
+        app.workspace.diff.is_computing = true;
+
+        assert!(sender
+            .send(DiffTaskMessage::Progress(DiffProgress {
+                phase: DiffProgressPhase::DiffingTable {
+                    table_name: "widgets".to_owned(),
+                    table_index: 0,
+                    total_tables: 1,
+                },
+                completed_steps: 3,
+                total_steps: Some(5),
+            }))
+            .is_ok());
+
+        app.poll_running_diff(&egui::Context::default());
+
+        assert!(app.workspace.diff.is_computing);
+        assert_eq!(
+            app.workspace.diff.progress,
+            Some(ProgressState::new(
+                "Diffing table `widgets` (1/1)...",
+                3,
+                Some(5),
+            ))
+        );
+        assert_eq!(
+            app.workspace.status_message.as_deref(),
+            Some("Diffing table `widgets` (1/1)...")
+        );
+        assert!(app.workspace.diff.result.is_none());
         Ok(())
     }
 
@@ -793,12 +1006,18 @@ mod tests {
             receiver,
         });
         app.workspace.diff.is_computing = true;
-        assert!(sender.send(Ok(sample_diff(&fixture))).is_ok());
+        app.workspace.diff.progress = Some(ProgressState::new("Comparing schemas...", 2, Some(5)));
+        assert!(sender
+            .send(DiffTaskMessage::Complete(Box::new(Ok(sample_diff(
+                &fixture
+            )))))
+            .is_ok());
 
         app.poll_running_diff(&egui::Context::default());
 
         assert!(!app.workspace.diff.is_computing);
         assert!(app.running_diff.is_none());
+        assert!(app.workspace.diff.progress.is_none());
         assert_eq!(app.workspace.active_view, WorkspaceView::Diff);
         assert_eq!(
             app.workspace.diff.selected_table.as_deref(),
@@ -810,7 +1029,7 @@ mod tests {
     }
 
     #[test]
-    fn loading_new_database_cancels_inflight_diff() -> Result<()> {
+    fn loading_new_database_drops_inflight_diff_receiver() -> Result<()> {
         let fixture = FixtureDbs::new()?;
         let replacement = fixture.create_db(
             "replacement.sqlite",
@@ -822,6 +1041,11 @@ mod tests {
         app.load_left(fixture.left.clone())?;
         app.workspace.diff.result = Some(sample_diff(&fixture));
         app.workspace.diff.is_computing = true;
+        app.workspace.diff.progress = Some(ProgressState::new(
+            "Diffing table `widgets` (1/1)...",
+            3,
+            Some(5),
+        ));
         app.running_diff = Some(RunningDiffTask {
             request: DiffRequest {
                 left_path: fixture.left.clone(),
@@ -835,8 +1059,13 @@ mod tests {
         assert!(app.running_diff.is_none());
         assert!(!app.workspace.diff.is_computing);
         assert!(app.workspace.diff.result.is_none());
+        assert!(app.workspace.diff.progress.is_none());
         assert!(app.workspace.diff.error.is_none());
-        assert!(sender.send(Ok(sample_diff(&fixture))).is_err());
+        assert!(sender
+            .send(DiffTaskMessage::Complete(Box::new(Ok(sample_diff(
+                &fixture
+            )))))
+            .is_err());
         Ok(())
     }
 

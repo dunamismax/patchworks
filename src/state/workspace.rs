@@ -29,6 +29,54 @@ pub enum DiffDisplayMode {
     Unified,
 }
 
+/// Coarse progress state for background work shown in the UI.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProgressState {
+    /// Human-readable description of the active step.
+    pub label: String,
+    /// Number of fully completed steps before the current step.
+    pub completed_steps: usize,
+    /// Total step count when known.
+    pub total_steps: Option<usize>,
+}
+
+impl ProgressState {
+    /// Creates a new progress snapshot.
+    pub fn new(
+        label: impl Into<String>,
+        completed_steps: usize,
+        total_steps: Option<usize>,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            completed_steps,
+            total_steps,
+        }
+    }
+
+    /// Returns a best-effort fractional completion for determinate progress.
+    pub fn fraction(&self) -> Option<f32> {
+        self.total_steps.map(|total| {
+            if total == 0 {
+                0.0
+            } else {
+                (self.completed_steps.min(total) as f32) / (total as f32)
+            }
+        })
+    }
+
+    /// Returns a short step-count label when the total is known.
+    pub fn step_label(&self) -> Option<String> {
+        self.total_steps.map(|total| {
+            format!(
+                "Step {} of {}",
+                (self.completed_steps + 1).min(total),
+                total
+            )
+        })
+    }
+}
+
 /// State for a single database pane.
 #[derive(Clone, Debug, Default)]
 pub struct DatabasePaneState {
@@ -42,6 +90,8 @@ pub struct DatabasePaneState {
     pub selected_table: Option<String>,
     /// Whether the visible table page is currently refreshing in the background.
     pub is_loading_table: bool,
+    /// Progress for the active background load on this pane, if any.
+    pub progress: Option<ProgressState>,
     /// Currently loaded page of table rows.
     pub table_page: Option<TablePage>,
     /// Query settings for the table page.
@@ -59,6 +109,8 @@ pub struct DiffState {
     pub result: Option<DatabaseDiff>,
     /// Whether a background diff computation is currently running.
     pub is_computing: bool,
+    /// Progress for the active background diff, if any.
+    pub progress: Option<ProgressState>,
     /// Selected table diff.
     pub selected_table: Option<String>,
     /// Chosen rendering mode.
@@ -72,6 +124,7 @@ impl Default for DiffState {
         Self {
             result: None,
             is_computing: false,
+            progress: None,
             selected_table: None,
             display_mode: DiffDisplayMode::Grid,
             error: None,

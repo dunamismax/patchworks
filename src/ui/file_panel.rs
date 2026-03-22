@@ -3,6 +3,7 @@
 use egui::{Color32, RichText, Ui};
 
 use crate::state::workspace::DatabasePaneState;
+use crate::ui::progress;
 
 /// Renders a database summary and table list for one side of the workspace.
 pub fn render_file_panel(ui: &mut Ui, title: &str, pane: &mut DatabasePaneState) -> bool {
@@ -19,11 +20,8 @@ pub fn render_file_panel(ui: &mut Ui, title: &str, pane: &mut DatabasePaneState)
         ui.colored_label(Color32::RED, error);
     }
 
-    if pane.is_loading {
-        ui.horizontal(|ui| {
-            ui.add(egui::Spinner::new());
-            ui.label("Loading database...");
-        });
+    if let Some(progress_state) = &pane.progress {
+        progress::render_progress(ui, progress_state);
     }
 
     if let Some(summary) = &pane.summary {

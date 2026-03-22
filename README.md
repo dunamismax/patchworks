@@ -20,7 +20,7 @@ Current limitations:
 - Snapshot state is stored under `~/.patchworks/`.
 - Very large exports and snapshot seeds still materialize substantial data in memory.
 - Live / WAL-backed / actively changing databases are still best-effort.
-- Long-running background loads and diffs still do not expose progress or cancellation controls.
+- Long-running background loads and diffs now expose staged progress, but there is still no explicit cancel control; superseded requests are dropped instead of being cooperatively interrupted.
 
 ## Crates.io
 
@@ -101,6 +101,7 @@ Patchworks creates a local store in your home directory:
 - Opening databases and refreshing visible table pages now run in the background with inline loading indicators.
 - Diff requests now run in the background, so the UI stays responsive while large comparisons complete.
 - Opening a right-side database from the toolbar loads it, but you still need to click `Diff`.
+- Long-running database opens, table refreshes, and diffs now show staged progress in the UI and status bar.
 - Row diffs are only computed for tables that exist on both sides.
 - Sorted pagination now adds a primary-key / `rowid` tie-breaker so duplicate sort values page deterministically.
 - SQL export favors correctness over minimal migrations when a table schema changes.

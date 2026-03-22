@@ -17,6 +17,17 @@ use crate::error::{PatchworksError, Result};
 const LARGE_TABLE_THRESHOLD: u64 = 100_000;
 const ROWID_ALIAS: &str = "__patchworks_rowid";
 
+/// Progress update emitted while diffing shared tables.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DataDiffProgress {
+    /// Shared table currently being diffed.
+    pub table_name: String,
+    /// Zero-based index of the current shared table.
+    pub table_index: usize,
+    /// Total number of shared tables that will be diffed.
+    pub total_tables: usize,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct StreamRow {
     pk_values: Vec<SqlValue>,
@@ -57,16 +68,43 @@ pub fn diff_all_tables(
     left: &DatabaseSummary,
     right: &DatabaseSummary,
 ) -> Result<Vec<TableDataDiff>> {
-    let mut diffs = Vec::new();
-    for left_table in &left.tables {
-        if let Some(right_table) = right
-            .tables
-            .iter()
-            .find(|table| table.name == left_table.name)
-        {
-            diffs.push(diff_table(left_path, right_path, left_table, right_table)?);
-        }
+    diff_all_tables_with_progress(left_path, right_path, left, right, |_| {})
+}
+
+/// Computes row-level diffs for all shared tables and reports table-level progress.
+pub fn diff_all_tables_with_progress<F>(
+    left_path: &Path,
+    right_path: &Path,
+    left: &DatabaseSummary,
+    right: &DatabaseSummary,
+    mut on_progress: F,
+) -> Result<Vec<TableDataDiff>>
+where
+    F: FnMut(DataDiffProgress),
+{
+    let shared_tables = left
+        .tables
+        .iter()
+        .filter_map(|left_table| {
+            right
+                .tables
+                .iter()
+                .find(|table| table.name == left_table.name)
+                .map(|right_table| (left_table, right_table))
+        })
+        .collect::<Vec<_>>();
+    let total_tables = shared_tables.len();
+    let mut diffs = Vec::with_capacity(total_tables);
+
+    for (table_index, (left_table, right_table)) in shared_tables.into_iter().enumerate() {
+        on_progress(DataDiffProgress {
+            table_name: left_table.name.clone(),
+            table_index,
+            total_tables,
+        });
+        diffs.push(diff_table(left_path, right_path, left_table, right_table)?);
     }
+
     Ok(diffs)
 }
 

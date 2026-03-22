@@ -4,20 +4,23 @@ use egui::{Color32, Grid, RichText, ScrollArea, Ui};
 
 use crate::db::types::{SortDirection, SqlValue, TableSort};
 use crate::state::workspace::DatabasePaneState;
+use crate::ui::progress;
 
 /// Renders the currently selected table page.
 pub fn render_table_view(ui: &mut Ui, pane: &mut DatabasePaneState) -> bool {
     let mut query_changed = false;
     if pane.is_loading {
-        ui.horizontal(|ui| {
-            ui.add(egui::Spinner::new());
+        if let Some(progress_state) = &pane.progress {
+            progress::render_progress(ui, progress_state);
+        } else {
             ui.label("Loading database...");
-        });
+        }
     } else if pane.is_loading_table {
-        ui.horizontal(|ui| {
-            ui.add(egui::Spinner::new());
+        if let Some(progress_state) = &pane.progress {
+            progress::render_progress(ui, progress_state);
+        } else {
             ui.label("Loading table...");
-        });
+        }
     } else if let Some(table_page) = &pane.table_page {
         ui.horizontal(|ui| {
             let page_count = ((table_page.total_rows as f32 / table_page.page_size as f32).ceil()
