@@ -15,6 +15,17 @@ use crate::error::{PatchworksError, Result};
 
 const INTERNAL_ROWID_ALIAS: &str = "__patchworks_rowid";
 
+/// Initial inspection payload used when opening a database in the UI.
+#[derive(Clone, Debug, PartialEq)]
+pub struct InitialInspection {
+    /// Full schema summary for the opened database.
+    pub summary: DatabaseSummary,
+    /// First table selected for browsing, if any.
+    pub selected_table: Option<String>,
+    /// First page of the selected table, if any.
+    pub table_page: Option<TablePage>,
+}
+
 /// Opens a SQLite connection in read-only mode.
 pub fn open_read_only(path: &Path) -> Result<Connection> {
     Ok(Connection::open_with_flags(
@@ -91,6 +102,31 @@ pub fn inspect_database(path: &Path) -> Result<DatabaseSummary> {
         views,
         indexes,
         triggers,
+    })
+}
+
+/// Reads the schema summary plus the initial visible table page for a database.
+pub fn inspect_database_with_page(path: &Path, query: &TableQuery) -> Result<InitialInspection> {
+    let summary = inspect_database(path)?;
+    let selected_table = summary.tables.first().map(|table| table.name.clone());
+    let table_page = if let Some(table_name) = &selected_table {
+        let table = summary
+            .tables
+            .iter()
+            .find(|table| table.name == *table_name)
+            .ok_or_else(|| PatchworksError::MissingTable {
+                table: table_name.clone(),
+                path: path.to_path_buf(),
+            })?;
+        Some(read_table_page_for_table(path, table, query)?)
+    } else {
+        None
+    };
+
+    Ok(InitialInspection {
+        summary,
+        selected_table,
+        table_page,
     })
 }
 

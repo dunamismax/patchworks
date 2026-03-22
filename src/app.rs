@@ -1,14 +1,17 @@
 //! Main egui application for Patchworks.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Duration;
 
 use eframe::egui;
 
 use crate::db::differ::{diff_databases, DatabaseDiff};
-use crate::db::inspector::{inspect_database, read_table_page_for_table};
+use crate::db::inspector::{
+    inspect_database_with_page, read_table_page_for_table, InitialInspection,
+};
 use crate::db::snapshot::SnapshotStore;
+use crate::db::types::{Snapshot, TableInfo, TablePage};
 use crate::error::Result;
 use crate::state::workspace::{DatabasePaneState, WorkspaceState, WorkspaceView};
 use crate::ui;
@@ -26,6 +29,10 @@ pub struct StartupOptions {
 pub struct PatchworksApp {
     workspace: WorkspaceState,
     snapshot_store: SnapshotStore,
+    running_left_load: Option<RunningPaneLoadTask>,
+    running_right_load: Option<RunningPaneLoadTask>,
+    running_left_table_load: Option<RunningTableLoadTask>,
+    running_right_table_load: Option<RunningTableLoadTask>,
     running_diff: Option<RunningDiffTask>,
 }
 
@@ -35,6 +42,10 @@ impl PatchworksApp {
         let mut app = Self {
             workspace: WorkspaceState::default(),
             snapshot_store: SnapshotStore::new_default()?,
+            running_left_load: None,
+            running_right_load: None,
+            running_left_table_load: None,
+            running_right_table_load: None,
             running_diff: None,
         };
         if let Some(path) = startup.left {
@@ -48,52 +59,107 @@ impl PatchworksApp {
     }
 
     fn load_left(&mut self, path: PathBuf) -> Result<()> {
-        load_into_pane(&mut self.workspace.left, &self.snapshot_store, &path)?;
+        self.start_pane_load(PaneSide::Left, path.clone());
         self.clear_diff_state();
-        self.workspace.status_message = Some(format!("Loaded {}", path.display()));
+        self.workspace.status_message = Some(format!("Loading {}...", path.display()));
         Ok(())
     }
 
     fn load_right(&mut self, path: PathBuf) -> Result<()> {
-        load_into_pane(&mut self.workspace.right, &self.snapshot_store, &path)?;
+        self.start_pane_load(PaneSide::Right, path.clone());
         self.clear_diff_state();
-        self.workspace.status_message = Some(format!("Loaded {}", path.display()));
+        self.workspace.status_message = Some(format!("Loading {}...", path.display()));
         Ok(())
     }
 
-    fn refresh_visible_tables(&mut self) {
-        if let Some(path) = self.workspace.left.path.clone() {
-            if let Some(selected) = self.workspace.left.selected_table.clone() {
-                if let Some(summary) = &self.workspace.left.summary {
-                    if let Some(table) = summary.tables.iter().find(|table| table.name == selected)
-                    {
-                        if let Ok(page) = read_table_page_for_table(
-                            &path,
-                            table,
-                            &self.workspace.left.table_query,
-                        ) {
-                            self.workspace.left.table_page = Some(page);
-                        }
-                    }
-                }
-            }
+    fn start_pane_load(&mut self, side: PaneSide, path: PathBuf) {
+        self.set_running_table_load(side, None);
+        self.set_running_pane_load(side, None);
+
+        let query = self.pane(side).table_query.clone();
+        let store = self.snapshot_store.clone();
+        let (sender, receiver) = mpsc::channel();
+
+        {
+            let pane = self.pane_mut(side);
+            pane.path = Some(path.clone());
+            pane.is_loading = true;
+            pane.is_loading_table = false;
+            pane.summary = None;
+            pane.selected_table = None;
+            pane.table_page = None;
+            pane.snapshots.clear();
+            pane.error = None;
         }
-        if let Some(path) = self.workspace.right.path.clone() {
-            if let Some(selected) = self.workspace.right.selected_table.clone() {
-                if let Some(summary) = &self.workspace.right.summary {
-                    if let Some(table) = summary.tables.iter().find(|table| table.name == selected)
-                    {
-                        if let Ok(page) = read_table_page_for_table(
-                            &path,
-                            table,
-                            &self.workspace.right.table_query,
-                        ) {
-                            self.workspace.right.table_page = Some(page);
-                        }
-                    }
-                }
-            }
+
+        self.set_running_pane_load(
+            side,
+            Some(RunningPaneLoadTask {
+                request: PaneLoadRequest { path: path.clone() },
+                receiver,
+            }),
+        );
+
+        std::thread::spawn(move || {
+            let result = inspect_database_with_page(&path, &query)
+                .map(|inspection| PaneLoadPayload {
+                    inspection,
+                    snapshots: store.list_snapshots(&path).unwrap_or_default(),
+                })
+                .map_err(|error| error.to_string());
+            let _ = sender.send(result);
+        });
+    }
+
+    fn request_table_refresh(&mut self, side: PaneSide) {
+        let Some(path) = self.pane(side).path.clone() else {
+            return;
+        };
+        let Some(selected_table) = self.pane(side).selected_table.clone() else {
+            let pane = self.pane_mut(side);
+            pane.is_loading_table = false;
+            pane.table_page = None;
+            self.set_running_table_load(side, None);
+            return;
+        };
+        let query = self.pane(side).table_query.clone();
+        let Some(table) = self.lookup_selected_table(side, &selected_table) else {
+            let pane = self.pane_mut(side);
+            pane.is_loading_table = false;
+            pane.table_page = None;
+            pane.error = Some(format!(
+                "Selected table `{selected_table}` no longer exists in {}.",
+                path.display()
+            ));
+            self.workspace.status_message = pane.error.clone();
+            self.set_running_table_load(side, None);
+            return;
+        };
+
+        self.set_running_table_load(side, None);
+        {
+            let pane = self.pane_mut(side);
+            pane.is_loading_table = true;
+            pane.table_page = None;
+            pane.error = None;
         }
+
+        let (sender, receiver) = mpsc::channel();
+        self.set_running_table_load(
+            side,
+            Some(RunningTableLoadTask {
+                request: TableLoadRequest {
+                    table_name: selected_table,
+                },
+                receiver,
+            }),
+        );
+
+        std::thread::spawn(move || {
+            let result =
+                read_table_page_for_table(&path, &table, &query).map_err(|error| error.to_string());
+            let _ = sender.send(result);
+        });
     }
 
     fn request_diff(&mut self) {
@@ -140,6 +206,117 @@ impl PatchworksApp {
         self.workspace.diff.is_computing = false;
         self.workspace.diff.selected_table = None;
         self.workspace.diff.error = None;
+    }
+
+    fn poll_background_work(&mut self, ctx: &egui::Context) {
+        self.poll_running_pane_load(PaneSide::Left, ctx);
+        self.poll_running_pane_load(PaneSide::Right, ctx);
+        self.poll_running_table_load(PaneSide::Left, ctx);
+        self.poll_running_table_load(PaneSide::Right, ctx);
+        self.poll_running_diff(ctx);
+    }
+
+    fn poll_running_pane_load(&mut self, side: PaneSide, ctx: &egui::Context) {
+        let Some(result) = self
+            .running_pane_load(side)
+            .as_ref()
+            .map(|task| task.receiver.try_recv())
+        else {
+            return;
+        };
+
+        match result {
+            Ok(result) => {
+                let Some(task) = self.running_pane_load_mut(side).take() else {
+                    return;
+                };
+                let pane = self.pane_mut(side);
+                pane.is_loading = false;
+                pane.is_loading_table = false;
+                match result {
+                    Ok(payload) => {
+                        pane.path = Some(task.request.path.clone());
+                        pane.summary = Some(payload.inspection.summary);
+                        pane.selected_table = payload.inspection.selected_table;
+                        pane.table_page = payload.inspection.table_page;
+                        pane.snapshots = payload.snapshots;
+                        pane.error = None;
+                        self.workspace.status_message =
+                            Some(format!("Loaded {}", task.request.path.display()));
+                    }
+                    Err(error) => {
+                        pane.summary = None;
+                        pane.selected_table = None;
+                        pane.table_page = None;
+                        pane.snapshots.clear();
+                        pane.error = Some(error.clone());
+                        self.workspace.status_message =
+                            Some(format!("Failed to load database: {error}"));
+                    }
+                }
+            }
+            Err(TryRecvError::Empty) => {
+                ctx.request_repaint_after(Duration::from_millis(50));
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.set_running_pane_load(side, None);
+                let pane = self.pane_mut(side);
+                pane.is_loading = false;
+                pane.is_loading_table = false;
+                pane.summary = None;
+                pane.selected_table = None;
+                pane.table_page = None;
+                pane.snapshots.clear();
+                pane.error = Some("Database loader stopped unexpectedly.".to_owned());
+                self.workspace.status_message =
+                    Some("Failed to load database: worker stopped unexpectedly.".to_owned());
+            }
+        }
+    }
+
+    fn poll_running_table_load(&mut self, side: PaneSide, ctx: &egui::Context) {
+        let Some(result) = self
+            .running_table_load(side)
+            .as_ref()
+            .map(|task| task.receiver.try_recv())
+        else {
+            return;
+        };
+
+        match result {
+            Ok(result) => {
+                let Some(task) = self.running_table_load_mut(side).take() else {
+                    return;
+                };
+                let pane = self.pane_mut(side);
+                pane.is_loading_table = false;
+                match result {
+                    Ok(page) => {
+                        pane.selected_table = Some(task.request.table_name);
+                        pane.table_page = Some(page);
+                        pane.error = None;
+                    }
+                    Err(error) => {
+                        pane.table_page = None;
+                        pane.error = Some(error.clone());
+                        self.workspace.status_message =
+                            Some(format!("Failed to load table page: {error}"));
+                    }
+                }
+            }
+            Err(TryRecvError::Empty) => {
+                ctx.request_repaint_after(Duration::from_millis(50));
+            }
+            Err(TryRecvError::Disconnected) => {
+                self.set_running_table_load(side, None);
+                let pane = self.pane_mut(side);
+                pane.is_loading_table = false;
+                pane.table_page = None;
+                pane.error = Some("Table loader stopped unexpectedly.".to_owned());
+                self.workspace.status_message =
+                    Some("Failed to load table page: worker stopped unexpectedly.".to_owned());
+            }
+        }
     }
 
     fn poll_running_diff(&mut self, ctx: &egui::Context) {
@@ -273,11 +450,71 @@ impl PatchworksApp {
         ui.separator();
         ui::workspace::render_view_switcher(ui, &mut self.workspace.active_view);
     }
+
+    fn pane(&self, side: PaneSide) -> &DatabasePaneState {
+        match side {
+            PaneSide::Left => &self.workspace.left,
+            PaneSide::Right => &self.workspace.right,
+        }
+    }
+
+    fn pane_mut(&mut self, side: PaneSide) -> &mut DatabasePaneState {
+        match side {
+            PaneSide::Left => &mut self.workspace.left,
+            PaneSide::Right => &mut self.workspace.right,
+        }
+    }
+
+    fn running_pane_load(&self, side: PaneSide) -> &Option<RunningPaneLoadTask> {
+        match side {
+            PaneSide::Left => &self.running_left_load,
+            PaneSide::Right => &self.running_right_load,
+        }
+    }
+
+    fn running_pane_load_mut(&mut self, side: PaneSide) -> &mut Option<RunningPaneLoadTask> {
+        match side {
+            PaneSide::Left => &mut self.running_left_load,
+            PaneSide::Right => &mut self.running_right_load,
+        }
+    }
+
+    fn set_running_pane_load(&mut self, side: PaneSide, task: Option<RunningPaneLoadTask>) {
+        *self.running_pane_load_mut(side) = task;
+    }
+
+    fn running_table_load(&self, side: PaneSide) -> &Option<RunningTableLoadTask> {
+        match side {
+            PaneSide::Left => &self.running_left_table_load,
+            PaneSide::Right => &self.running_right_table_load,
+        }
+    }
+
+    fn running_table_load_mut(&mut self, side: PaneSide) -> &mut Option<RunningTableLoadTask> {
+        match side {
+            PaneSide::Left => &mut self.running_left_table_load,
+            PaneSide::Right => &mut self.running_right_table_load,
+        }
+    }
+
+    fn set_running_table_load(&mut self, side: PaneSide, task: Option<RunningTableLoadTask>) {
+        *self.running_table_load_mut(side) = task;
+    }
+
+    fn lookup_selected_table(&self, side: PaneSide, table_name: &str) -> Option<TableInfo> {
+        self.pane(side).summary.as_ref().and_then(|summary| {
+            summary
+                .tables
+                .iter()
+                .find(|table| table.name == table_name)
+                .cloned()
+        })
+    }
 }
 
 impl eframe::App for PatchworksApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.poll_running_diff(ctx);
+        self.poll_background_work(ctx);
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal_wrapped(|ui| self.render_toolbar(ui));
@@ -293,7 +530,7 @@ impl eframe::App for PatchworksApp {
             .resizable(true)
             .show(ctx, |ui| {
                 if ui::file_panel::render_file_panel(ui, "Left", &mut self.workspace.left) {
-                    self.refresh_visible_tables();
+                    self.request_table_refresh(PaneSide::Left);
                 }
             });
 
@@ -301,7 +538,7 @@ impl eframe::App for PatchworksApp {
             .resizable(true)
             .show(ctx, |ui| {
                 if ui::file_panel::render_file_panel(ui, "Right", &mut self.workspace.right) {
-                    self.refresh_visible_tables();
+                    self.request_table_refresh(PaneSide::Right);
                 }
             });
 
@@ -310,11 +547,11 @@ impl eframe::App for PatchworksApp {
                 ui.columns(2, |columns| {
                     if ui::table_view::render_table_view(&mut columns[0], &mut self.workspace.left)
                     {
-                        self.refresh_visible_tables();
+                        self.request_table_refresh(PaneSide::Left);
                     }
                     if ui::table_view::render_table_view(&mut columns[1], &mut self.workspace.right)
                     {
-                        self.refresh_visible_tables();
+                        self.request_table_refresh(PaneSide::Right);
                     }
                 });
             }
@@ -350,31 +587,43 @@ impl eframe::App for PatchworksApp {
     }
 }
 
-fn load_into_pane(pane: &mut DatabasePaneState, store: &SnapshotStore, path: &Path) -> Result<()> {
-    let summary = inspect_database(path)?;
-    let selected_table = summary.tables.first().map(|table| table.name.clone());
-    let table_page = if let Some(table_name) = &selected_table {
-        let table = summary
-            .tables
-            .iter()
-            .find(|table| table.name == *table_name)
-            .ok_or_else(|| crate::error::PatchworksError::MissingTable {
-                table: table_name.clone(),
-                path: path.to_path_buf(),
-            })?;
-        Some(read_table_page_for_table(path, table, &pane.table_query)?)
-    } else {
-        None
-    };
-
-    pane.path = Some(path.to_path_buf());
-    pane.summary = Some(summary);
-    pane.selected_table = selected_table;
-    pane.table_page = table_page;
-    pane.snapshots = store.list_snapshots(path).unwrap_or_default();
-    pane.error = None;
-    Ok(())
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaneSide {
+    Left,
+    Right,
 }
+
+#[derive(Debug)]
+struct RunningPaneLoadTask {
+    request: PaneLoadRequest,
+    receiver: Receiver<PaneLoadTaskResult>,
+}
+
+#[derive(Clone, Debug)]
+struct PaneLoadRequest {
+    path: PathBuf,
+}
+
+#[derive(Debug)]
+struct PaneLoadPayload {
+    inspection: InitialInspection,
+    snapshots: Vec<Snapshot>,
+}
+
+type PaneLoadTaskResult = std::result::Result<PaneLoadPayload, String>;
+
+#[derive(Debug)]
+struct RunningTableLoadTask {
+    request: TableLoadRequest,
+    receiver: Receiver<TableLoadTaskResult>,
+}
+
+#[derive(Clone, Debug)]
+struct TableLoadRequest {
+    table_name: String,
+}
+
+type TableLoadTaskResult = std::result::Result<TablePage, String>;
 
 #[derive(Debug)]
 struct RunningDiffTask {
@@ -397,7 +646,138 @@ mod tests {
     use rusqlite::Connection;
     use tempfile::TempDir;
 
-    use crate::db::types::{DatabaseSummary, SchemaDiff};
+    use crate::db::inspector::read_table_page;
+    use crate::db::types::{DatabaseSummary, SchemaDiff, TableQuery};
+
+    #[test]
+    fn left_database_load_runs_in_background_and_applies_result() -> Result<()> {
+        let fixture = FixtureDbs::new()?;
+        let mut app = PatchworksApp::new(StartupOptions::default())?;
+
+        app.load_left(fixture.left.clone())?;
+
+        assert!(app.workspace.left.is_loading);
+        assert!(app.workspace.left.summary.is_none());
+        assert!(app.running_left_load.is_some());
+
+        wait_for_pane_load(&mut app, PaneSide::Left);
+
+        assert!(!app.workspace.left.is_loading);
+        assert!(app.running_left_load.is_none());
+        assert_eq!(app.workspace.left.path.as_ref(), Some(&fixture.left));
+        assert_eq!(
+            app.workspace.left.selected_table.as_deref(),
+            Some("gadgets")
+        );
+        assert_eq!(
+            app.workspace
+                .left
+                .table_page
+                .as_ref()
+                .map(|page| page.rows.len()),
+            Some(1)
+        );
+        assert!(app.workspace.left.error.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn table_refresh_runs_in_background_and_updates_page() -> Result<()> {
+        let fixture = FixtureDbs::new()?;
+        let mut app = PatchworksApp::new(StartupOptions::default())?;
+
+        app.load_left(fixture.left.clone())?;
+        wait_for_pane_load(&mut app, PaneSide::Left);
+
+        app.workspace.left.selected_table = Some("widgets".to_owned());
+        app.workspace.left.table_query = TableQuery {
+            page: 0,
+            page_size: 1,
+            sort: None,
+        };
+
+        app.request_table_refresh(PaneSide::Left);
+
+        assert!(app.workspace.left.is_loading_table);
+        assert!(app.running_left_table_load.is_some());
+        assert!(app.workspace.left.table_page.is_none());
+
+        wait_for_table_load(&mut app, PaneSide::Left);
+
+        let page = app
+            .workspace
+            .left
+            .table_page
+            .as_ref()
+            .expect("table page applied");
+        assert_eq!(page.table_name, "widgets");
+        assert_eq!(page.rows.len(), 1);
+        assert!(!app.workspace.left.is_loading_table);
+        Ok(())
+    }
+
+    #[test]
+    fn replacing_table_refresh_drops_stale_receiver() -> Result<()> {
+        let fixture = FixtureDbs::new()?;
+        let mut app = PatchworksApp::new(StartupOptions::default())?;
+        app.load_left(fixture.left.clone())?;
+        wait_for_pane_load(&mut app, PaneSide::Left);
+
+        let old_page = read_table_page(
+            &fixture.left,
+            "widgets",
+            &TableQuery {
+                page: 0,
+                page_size: 1,
+                sort: None,
+            },
+        )?;
+        let new_page = read_table_page(
+            &fixture.left,
+            "widgets",
+            &TableQuery {
+                page: 1,
+                page_size: 1,
+                sort: None,
+            },
+        )?;
+
+        let (old_sender, old_receiver) = mpsc::channel();
+        app.running_left_table_load = Some(RunningTableLoadTask {
+            request: TableLoadRequest {
+                table_name: "widgets".to_owned(),
+            },
+            receiver: old_receiver,
+        });
+
+        let (new_sender, new_receiver) = mpsc::channel();
+        app.set_running_table_load(
+            PaneSide::Left,
+            Some(RunningTableLoadTask {
+                request: TableLoadRequest {
+                    table_name: "widgets".to_owned(),
+                },
+                receiver: new_receiver,
+            }),
+        );
+        app.workspace.left.is_loading_table = true;
+        app.workspace.left.table_page = None;
+
+        assert!(old_sender.send(Ok(old_page)).is_err());
+        assert!(new_sender.send(Ok(new_page)).is_ok());
+
+        app.poll_running_table_load(PaneSide::Left, &egui::Context::default());
+
+        let page = app
+            .workspace
+            .left
+            .table_page
+            .as_ref()
+            .expect("newest table page applied");
+        assert_eq!(page.page, 1);
+        assert!(!app.workspace.left.is_loading_table);
+        Ok(())
+    }
 
     #[test]
     fn poll_running_diff_applies_completed_result() -> Result<()> {
@@ -460,6 +840,28 @@ mod tests {
         Ok(())
     }
 
+    fn wait_for_pane_load(app: &mut PatchworksApp, side: PaneSide) {
+        for _ in 0..200 {
+            app.poll_running_pane_load(side, &egui::Context::default());
+            if app.running_pane_load(side).is_none() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("timed out waiting for pane load to finish");
+    }
+
+    fn wait_for_table_load(app: &mut PatchworksApp, side: PaneSide) {
+        for _ in 0..200 {
+            app.poll_running_table_load(side, &egui::Context::default());
+            if app.running_table_load(side).is_none() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("timed out waiting for table load to finish");
+    }
+
     struct FixtureDbs {
         _tempdir: TempDir,
         left: PathBuf,
@@ -473,7 +875,9 @@ mod tests {
                 tempdir.path().join("left.sqlite"),
                 &[
                     "CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL);",
-                    "INSERT INTO widgets (id, name) VALUES (1, 'left');",
+                    "INSERT INTO widgets (id, name) VALUES (1, 'left-a'), (2, 'left-b');",
+                    "CREATE TABLE gadgets (id INTEGER PRIMARY KEY, label TEXT NOT NULL);",
+                    "INSERT INTO gadgets (id, label) VALUES (1, 'gizmo');",
                 ],
             )?;
             let right = Self::create_db_at(

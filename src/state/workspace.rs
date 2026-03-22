@@ -34,10 +34,14 @@ pub enum DiffDisplayMode {
 pub struct DatabasePaneState {
     /// Loaded database path.
     pub path: Option<PathBuf>,
+    /// Whether a database inspection is currently running in the background.
+    pub is_loading: bool,
     /// Last schema summary.
     pub summary: Option<DatabaseSummary>,
     /// Currently selected table.
     pub selected_table: Option<String>,
+    /// Whether the visible table page is currently refreshing in the background.
+    pub is_loading_table: bool,
     /// Currently loaded page of table rows.
     pub table_page: Option<TablePage>,
     /// Query settings for the table page.

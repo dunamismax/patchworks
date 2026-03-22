@@ -56,8 +56,7 @@ What Patchworks does not currently do:
 
 - It does not expose headless CLI commands for inspect, diff, SQL export, snapshot listing, or snapshot cleanup.
 - It does not diff or export views; views are inspect-only.
-- It does not yet provide progress reporting or explicit cancellation for long-running diff jobs.
-- It does not yet move all database loading work off the UI thread.
+- It does not yet provide progress reporting or explicit cancellation for long-running background inspection, table-load, or diff jobs.
 - It does not yet stream very large exports; some large operations still materialize significant data in memory.
 - It does not yet include installer/release automation beyond normal Cargo packaging expectations.
 
@@ -106,7 +105,7 @@ Supported by the codebase but not fully re-verified in the recorded passes above
   - `Cargo.toml`
 - CLI surface and startup behavior:
   - `src/main.rs`
-- Top-level app orchestration, background diff task wiring, and UI-to-backend coordination:
+- Top-level app orchestration, background load/task wiring, and UI-to-backend coordination:
   - `src/app.rs`
 - Shared error model:
   - `src/error.rs`
@@ -155,7 +154,7 @@ When docs and code disagree, code and tests win. Update docs immediately rather 
   - Otherwise launches the desktop application.
 - `src/app.rs`
   - Coordinates file loading, visible table refresh, diff requests, snapshots, and SQL export actions.
-  - Owns the background diff task handoff currently used to keep diff computation off the UI thread.
+  - Owns the background task handoff used to keep database inspection, visible-table refresh, and diff computation off the UI thread.
 - `src/db/`
   - Owns SQLite inspection, snapshot persistence, shared backend types, and high-level diff/export orchestration.
 - `src/diff/`
@@ -169,16 +168,17 @@ When docs and code disagree, code and tests win. Update docs immediately rather 
 ### Primary runtime flow
 
 1. `main.rs` parses arguments and decides whether to run snapshot mode or launch the GUI.
-2. `app.rs` loads left and right database summaries through `db::inspector`.
-3. UI state in `state::workspace` tracks active databases, selected tables, diff mode, and view state.
-4. Diff requests flow through `db::differ`, which combines schema diffing, row diffing, and SQL export preparation.
-5. The background diff result is applied back into app state on a later UI update tick.
-6. `ui/*` modules render schema diff, row diff, table browsing, snapshot management, and SQL export views.
-7. Snapshot actions persist metadata to `~/.patchworks/patchworks.db` and copied database files under `~/.patchworks/snapshots/`.
+2. `app.rs` schedules left and right database inspection plus initial table-page loads through `db::inspector` background workers.
+3. UI state in `state::workspace` tracks active databases, selected tables, loading flags, diff mode, and view state.
+4. Visible-table selection, sorting, and pagination requests also flow through `db::inspector` background workers.
+5. Diff requests flow through `db::differ`, which combines schema diffing, row diffing, and SQL export preparation.
+6. Background load and diff results are applied back into app state on later UI update ticks.
+7. `ui/*` modules render schema diff, row diff, table browsing, snapshot management, and SQL export views.
+8. Snapshot actions persist metadata to `~/.patchworks/patchworks.db` and copied database files under `~/.patchworks/snapshots/`.
 
 ### Important current behavior constraints
 
-- Diffing is backgrounded; database inspection and some refresh work are still synchronous.
+- Diffing, database inspection, and visible-table refresh now run on background workers.
 - Row diffs only run for tables present on both sides.
 - Row diff prefers shared primary keys and falls back to table-local row identity (`rowid` when available, otherwise each table's declared primary key) with warnings.
 - Sorted pagination adds a deterministic primary-key or `rowid` tie-breaker.
@@ -316,8 +316,8 @@ Exit criteria:
 
 Status: in progress
 
-- [ ] Move database inspection off the UI thread.
-- [ ] Move table-page refresh work off the UI thread or otherwise bound its impact on interactivity.
+- [x] Move database inspection off the UI thread.
+- [x] Move table-page refresh work off the UI thread or otherwise bound its impact on interactivity.
 - [ ] Add progress reporting for long-running diff jobs.
 - [ ] Decide whether explicit diff cancellation belongs in the current architecture.
 - [ ] Refactor SQL export away from one giant in-memory `String` for very large migrations.
@@ -386,7 +386,7 @@ Exit criteria:
 
 ## Risk Register
 
-- Database inspection still happens synchronously and can block the UI on large files.
+- Background inspection and table loading keep the UI interactive, but they still lack progress reporting and explicit cancellation semantics.
 - SQL export still builds one large in-memory payload and can materialize large tables during seeding.
 - Live databases, WAL-backed databases, encrypted databases, and other actively changing sources are still only best-effort.
 - Background diff execution improves responsiveness but still lacks progress reporting and explicit cancellation semantics.
@@ -396,10 +396,10 @@ Exit criteria:
 
 ## Immediate Next Moves
 
-1. Move database inspection and visible-table refresh off the UI thread before doing broad UI polish.
+1. Add progress reporting and decide whether explicit cancellation belongs in the background load/diff architecture.
 2. Rework SQL export and seeding toward bounded-memory behavior for large databases.
 3. Add sharper tests and docs for live / WAL-backed database behavior so the product's trust boundary is explicit.
-4. Decide whether headless CLI work starts before or after the first responsiveness hardening slice lands.
+4. Decide whether headless CLI work starts before or after the next responsiveness hardening slice lands.
 5. Add a macOS CI build smoke path once the current hardening priorities are underway.
 
 ## Progress Log
@@ -410,6 +410,7 @@ Exit criteria:
 - 2026-03-21: Added crates.io-facing metadata in `Cargo.toml`, updated `README.md` for packaged-readme correctness and local publishability guidance, and recorded the successful local package validation path. Verified with: `cargo metadata --no-deps --format-version 1`, `cargo package --allow-dirty --list`, `cargo package --allow-dirty`, `cargo test`. Next: keep BUILD, README, and future release workflow aligned with the actual package/install story.
 - 2026-03-21: Reframed `BUILD.md` into a phase-based execution plan with clearer source-of-truth mapping, architecture flow, quality gates, risks, and next moves while preserving recorded verification history. Verified with: repo document and source-tree audit of `BUILD.md`, `README.md`, `AGENTS.md`, `Cargo.toml`, `src/`, `tests/`, and `benches/`. Next: update this plan in lockstep with the next real code or verification pass.
 - 2026-03-22: Hardened row diff and SQL export around SQLite edge cases: row diff no longer assumes `rowid` exists when shared primary keys diverge, SQL export now uses a temporary-table rebuild path plus foreign-key guarding so exports apply cleanly when `PRAGMA foreign_keys=ON`, and added regression coverage for WITHOUT ROWID fallback and FK-enforced export application. Verified with: `cargo test --test diff_tests`, `cargo fmt --all --check`, `cargo build`, `cargo test`, `cargo nextest run`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo bench --no-run`, `cargo deny check`, `cargo run -- --help`. Next: keep Phase 3 focused on async inspection/page loading, explicit progress reporting, and bounded-memory export generation.
+- 2026-03-22: Moved database inspection and visible-table refresh onto background workers, added pane/table loading state in the UI, and landed app-level regression coverage for background load application and stale table-refresh dropping. Verified with: `cargo test --lib`, `cargo test`, `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`. Next: add progress reporting and decide whether explicit cancellation belongs in the current background-task architecture.
 
 ## Decision Log
 
@@ -422,3 +423,4 @@ Exit criteria:
 - 2026-03-20: Diff computation runs on a background thread while inspection still remains synchronous - this was the lowest-friction responsiveness win already landed - further UI-thread loading work is still required and remains active scope.
 - 2026-03-21: Crate metadata and packaged README content were aligned for crates.io and local packaging - this makes `cargo package --allow-dirty` a recorded success path - future docs changes must keep packaged links and publishability checks honest.
 - 2026-03-22: SQL export now prioritizes SQLite foreign-key safety over preserving the original `CREATE TABLE` header text byte-for-byte - schema-changed tables are rebuilt via a temporary replacement table and the generated migration batch guards `PRAGMA foreign_keys` around the operation - inspection normalizes simple table-header quoting so semantic comparisons stay stable even though SQLite rewrites renamed table definitions.
+- 2026-03-22: Inspection and visible-table refresh now run on background worker threads coordinated from `src/app.rs` - this keeps `ui/` presentation-focused while allowing stale page-refresh results to be dropped by replacing their receivers - future responsiveness work should build on this task-handoff shape instead of reintroducing synchronous database reads in the render loop.

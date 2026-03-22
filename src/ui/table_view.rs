@@ -8,7 +8,17 @@ use crate::state::workspace::DatabasePaneState;
 /// Renders the currently selected table page.
 pub fn render_table_view(ui: &mut Ui, pane: &mut DatabasePaneState) -> bool {
     let mut query_changed = false;
-    if let Some(table_page) = &pane.table_page {
+    if pane.is_loading {
+        ui.horizontal(|ui| {
+            ui.add(egui::Spinner::new());
+            ui.label("Loading database...");
+        });
+    } else if pane.is_loading_table {
+        ui.horizontal(|ui| {
+            ui.add(egui::Spinner::new());
+            ui.label("Loading table...");
+        });
+    } else if let Some(table_page) = &pane.table_page {
         ui.horizontal(|ui| {
             let page_count = ((table_page.total_rows as f32 / table_page.page_size as f32).ceil()
                 as usize)

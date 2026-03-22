@@ -20,6 +20,7 @@ Current limitations:
 - Snapshot state is stored under `~/.patchworks/`.
 - Very large exports and snapshot seeds still materialize substantial data in memory.
 - Live / WAL-backed / actively changing databases are still best-effort.
+- Long-running background loads and diffs still do not expose progress or cancellation controls.
 
 ## Crates.io
 
@@ -97,6 +98,7 @@ Patchworks creates a local store in your home directory:
 ## Behavior Notes
 
 - Starting the app with two database paths computes a diff on launch.
+- Opening databases and refreshing visible table pages now run in the background with inline loading indicators.
 - Diff requests now run in the background, so the UI stays responsive while large comparisons complete.
 - Opening a right-side database from the toolbar loads it, but you still need to click `Diff`.
 - Row diffs are only computed for tables that exist on both sides.

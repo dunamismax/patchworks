@@ -19,6 +19,13 @@ pub fn render_file_panel(ui: &mut Ui, title: &str, pane: &mut DatabasePaneState)
         ui.colored_label(Color32::RED, error);
     }
 
+    if pane.is_loading {
+        ui.horizontal(|ui| {
+            ui.add(egui::Spinner::new());
+            ui.label("Loading database...");
+        });
+    }
+
     if let Some(summary) = &pane.summary {
         ui.separator();
         ui.label(format!(
