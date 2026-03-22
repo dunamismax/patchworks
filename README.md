@@ -1,30 +1,32 @@
 # Patchworks
 
-Patchworks is a GUI-first Rust desktop app for inspecting and diffing SQLite databases. It can open zero, one, or two database files, browse tables and views, compare schema and row-level changes, save snapshots, and generate SQL intended to move the left database toward the right database.
+**Git-style diffs for SQLite databases.**
 
-## What works today
+Patchworks is a native desktop tool that treats SQLite databases the way `git diff` treats source code. Open one database to inspect it. Open two to see exactly what changed — every schema modification, every row added, removed, or altered — then generate the SQL to reconcile them.
 
-- Inspect SQLite tables and views in a native `egui` desktop UI
-- Browse table rows with pagination and sortable columns
-- Diff two databases at schema level and row level
-- Save snapshots of a live database and compare against them later
-- Preview SQL export in the UI, copy it to the clipboard, or save it to disk
-- Preserve tracked indexes and triggers in generated SQL migrations
-- Create a snapshot from the CLI with `patchworks --snapshot <db>`
+No cloud. No account. No daemon. One binary, your databases, the truth.
 
-## Current limits and operating truth
+## Why Patchworks exists
 
-- Patchworks is still a GUI-first tool; there is no headless CLI for `inspect`, `diff`, or SQL export yet.
-- Views are inspect-only in the current phase; they are not diffed or exported.
-- Indexes and triggers are preserved in generated SQL, but they are not surfaced in dedicated UI panels yet.
-- Snapshot state lives under `~/.patchworks/` on the local machine.
-- Best results come from stable SQLite files; live, WAL-backed, or actively changing databases are still best-effort.
-- Long-running database opens, table refreshes, and diffs now show staged progress, but there is still no explicit cancel control; superseded requests are dropped instead of being cooperatively interrupted.
-- Very large exports and snapshot seeds can still materialize substantial data in memory.
+Every team that ships software backed by SQLite eventually hits the same wall: "what actually changed in this database?" Maybe it's a production config store that drifted. Maybe it's a mobile app's local database after a migration. Maybe it's two copies of the same file and nobody remembers which one is current.
 
-## Crates.io
+The existing options are grim — hex editors, ad-hoc scripts, manually eyeballing `sqlite3` output. Patchworks replaces all of that with a purpose-built comparison engine and a fast native UI.
 
-- <https://crates.io/crates/patchworks>
+## What it does today
+
+| Capability | Status |
+|---|---|
+| Inspect SQLite schema, tables, and views | Shipped |
+| Browse rows with pagination and sortable columns | Shipped |
+| Schema-level diff (tables, indexes, triggers) | Shipped |
+| Row-level diff with streaming merge comparison | Shipped |
+| Snapshot a database to `~/.patchworks/` for later comparison | Shipped |
+| Generate SQL migration (left → right) | Shipped |
+| Foreign-key-safe export with trigger preservation | Shipped |
+| Background processing with progress indicators | Shipped |
+| Headless CLI for inspect, diff, and export | Planned |
+| Plugin/extension system | Planned |
+| Shared snapshot registries | Planned |
 
 ## Install
 
@@ -32,29 +34,95 @@ Patchworks is a GUI-first Rust desktop app for inspecting and diffing SQLite dat
 cargo install patchworks
 ```
 
-`rusqlite` is built with the `bundled` feature, so a system SQLite library is not required.
+`rusqlite` ships with the `bundled` feature — no system SQLite required.
+
+### Build from source
+
+```bash
+git clone git@github.com:dunamismax/patchworks.git
+cd patchworks
+cargo build --release
+```
 
 ## Quick start
 
 ```bash
+# Launch empty — open databases from the UI
 patchworks
+
+# Inspect a single database
 patchworks app.db
+
+# Diff two databases
 patchworks left.db right.db
+
+# Snapshot a database for later comparison
 patchworks --snapshot app.db
 ```
 
-If you're working from a local checkout instead of an installed binary:
+## How it works
 
-```bash
-cargo run
-cargo run -- app.db
-cargo run -- left.db right.db
-cargo run -- --snapshot app.db
+Patchworks reads SQLite databases through `rusqlite` in read-only mode, extracts schema metadata from `sqlite_master`, and performs a streaming merge comparison across shared tables. The diff engine:
+
+- Detects added, removed, and modified tables and columns at the schema level
+- Streams row-level comparisons using primary keys (falls back to `rowid` with warnings when keys diverge)
+- Tracks indexes and triggers through the full diff pipeline
+- Generates SQL migrations that rebuild modified tables via temporary replacement, guard `PRAGMA foreign_keys`, and drop/recreate triggers around DML
+
+The UI is built on [egui](https://github.com/emilk/egui) — immediate-mode, GPU-accelerated, cross-platform. All heavy work (inspection, table loading, diffing) runs on background threads with staged progress reporting.
+
+## Architecture
+
+```
+src/
+├── main.rs          # CLI entrypoint
+├── app.rs           # Application coordinator and background task management
+├── db/              # SQLite inspection, snapshots, diff orchestration
+│   ├── inspector.rs # Schema and row reading with pagination
+│   ├── differ.rs    # High-level diff coordination with progress
+│   ├── snapshot.rs  # Local snapshot store (~/.patchworks/)
+│   └── types.rs     # Core data types
+├── diff/            # Comparison algorithms and export
+│   ├── schema.rs    # Schema diffing
+│   ├── data.rs      # Streaming row-level diffing
+│   └── export.rs    # SQL migration generation
+├── state/           # UI-facing workspace state
+└── ui/              # egui rendering layer
 ```
 
-## Contributor workflow
+For deep architectural details, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-Common local verification commands:
+## Current limits
+
+Patchworks is honest about what it can and cannot do today:
+
+- **GUI-first.** No headless CLI for inspect/diff/export yet (Phase 4 on the roadmap).
+- **Views are inspect-only.** They are not diffed or exported.
+- **No explicit cancel.** Long-running jobs show progress but can only be superseded, not interrupted.
+- **Memory-bounded exports are WIP.** Very large migrations still materialize significant data in memory.
+- **Best-effort on live databases.** Stable files give the best results; WAL-backed or actively changing databases are handled but not guaranteed.
+
+## Roadmap
+
+Patchworks has a 13-phase development plan tracked in [`BUILD.md`](BUILD.md):
+
+- **Phases 0-2** (done): MVP — inspection, diffing, snapshots, SQL export, schema-object fidelity
+- **Phase 3** (in progress): Responsiveness and large-database hardening
+- **Phase 4**: Headless CLI and automation surface
+- **Phase 5**: Packaging, platform confidence, release discipline
+- **Phase 6**: Product polish and UX refinement
+- **Phase 7**: Advanced diff intelligence
+- **Phase 8**: Migration workflow management
+- **Phase 9**: Plugin and extension architecture
+- **Phase 10**: Team features and shared snapshot registries
+- **Phase 11**: CI/CD integration and automation ecosystem
+- **Phase 12**: Multi-engine exploration and long-term platform evolution
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, conventions, and how to get involved.
+
+## Verification
 
 ```bash
 cargo build
@@ -64,42 +132,23 @@ cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo bench --no-run
 cargo deny check
-cargo run -- --help
 ```
-
-For the full project handoff, phase tracking, and source-of-truth notes, see [`BUILD.md`](BUILD.md).
 
 ## Snapshot storage
 
-Patchworks creates a local store in your home directory:
+Patchworks maintains a local store in your home directory:
 
-- Metadata database: `~/.patchworks/patchworks.db`
-- Snapshot database copies: `~/.patchworks/snapshots/<uuid>.sqlite`
-
-## Behavior notes
-
-- Starting the app with two database paths computes a diff on launch.
-- Opening databases and refreshing visible table pages run in the background with inline loading indicators.
-- Diff requests also run in the background, so the UI stays responsive while large comparisons complete.
-- Opening a right-side database from the toolbar loads it, but you still need to click `Diff`.
-- Row diffs are only computed for tables that exist on both sides.
-- Sorted pagination adds a primary-key or `rowid` tie-breaker so duplicate sort values page deterministically.
-- SQL export favors correctness over minimal migrations when a table schema changes.
-- Generated SQL drops and recreates tracked triggers after migration DML so export application does not accidentally fire left-side trigger logic.
-
-## Repository layout
-
-- `src/main.rs`: CLI entrypoint and desktop startup
-- `src/app.rs`: app coordinator and workspace actions
-- `src/db/`: inspection, diff orchestration, snapshots, and shared types
-- `src/diff/`: schema diff, row diff, and SQL export logic
-- `src/ui/`: `egui` rendering layer
-- `tests/`: integration tests and SQLite fixtures
-- `benches/`: Criterion benchmarks for query and diff hot paths
-- `.github/workflows/ci.yml`: GitHub Actions CI
-- `deny.toml`: `cargo-deny` dependency policy
-- `BUILD.md`: living build and handoff document for future passes
+- Metadata: `~/.patchworks/patchworks.db`
+- Snapshots: `~/.patchworks/snapshots/<uuid>.sqlite`
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Links
+
+- [Crates.io](https://crates.io/crates/patchworks)
+- [Build Plan](BUILD.md)
+- [Architecture](ARCHITECTURE.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)

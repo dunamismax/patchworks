@@ -1,9 +1,34 @@
+# Build artifacts
 /target
+
+# Test artifacts
 /.patchworks-test
+
+# SQLite databases (test artifacts, not source)
 *.db
 *.sqlite
 *.sqlite3
+
+# SQLite WAL mode files
 *.db-shm
 *.db-wal
 *.sqlite-shm
 *.sqlite-wal
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor state
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# Profiling and coverage
+*.profraw
+*.profdata
+lcov.info
+tarpaulin-report.html

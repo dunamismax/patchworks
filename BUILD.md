@@ -4,7 +4,6 @@ Last updated: 2026-03-22
 Status: active development, post-MVP hardening
 Primary surface: native Rust desktop app via `egui`/`eframe`
 Package: crates.io `patchworks` (`0.1.0`)
-Scope: inspect, diff, snapshot, and export SQLite databases without pretending the current app is already a full automation platform
 
 ## Purpose
 
@@ -14,14 +13,28 @@ Any agent or developer making meaningful changes to code, docs, workflow, or rel
 
 ## Mission
 
-Build a trustworthy SQLite comparison tool that is useful on a developer workstation today and can grow into a stronger operational tool over time.
+Build the definitive SQLite comparison and migration tool — the `git diff` of the database world.
 
-Current intent:
+Patchworks exists because there is no trustworthy, purpose-built tool for understanding what changed between two SQLite databases. Not a hex editor. Not a shell script. A real tool — correct, fast, and native — that a developer or operator can point at two database files and immediately understand the delta.
 
-- Keep the desktop app genuinely useful for inspecting one or two databases quickly.
-- Make schema diff, row diff, snapshots, and SQL export correct enough to trust before optimizing for breadth.
-- Preserve SQLite-specific nuance instead of flattening everything into generic database abstractions.
-- Expand toward better scale, responsiveness, and eventual automation without lying about what the current product already supports.
+### Long-term vision
+
+Patchworks will evolve from a desktop inspection tool into a complete SQLite lifecycle platform:
+
+1. **Today**: A desktop app that inspects, diffs, snapshots, and exports SQL migrations between SQLite databases.
+2. **Near-term**: A headless CLI that makes the same engine scriptable for automation, CI pipelines, and pre-commit hooks.
+3. **Mid-term**: An intelligent diff engine with semantic understanding, migration chain management, and conflict resolution.
+4. **Long-term**: A plugin-extensible platform with team collaboration features, shared snapshot registries, and deep CI/CD integration.
+
+The through-line: SQLite-specific correctness first. Every feature earns its place by being trustworthy before being powerful.
+
+### Operating principles
+
+- **Correctness over cleverness.** A heavier migration that is semantically correct beats a minimal one that breaks edge cases.
+- **SQLite-native.** Preserve the nuance of SQLite (rowid, WITHOUT ROWID, WAL, PRAGMA behavior) instead of flattening into generic database abstractions.
+- **Honest scope.** Never describe future work as present capability. BUILD.md tracks what actually works.
+- **Desktop-first, automation-ready.** The GUI is the primary surface today, but every backend capability must be usable without a window.
+- **Single binary, zero config.** `cargo install patchworks` should be all anyone needs.
 
 ## Operating Truth
 
@@ -287,7 +300,13 @@ Do not record these as passed unless they were actually run in the repo.
 - Phase 3 - Responsiveness and large-database hardening. Status: in progress.
 - Phase 4 - Headless CLI and automation surface. Status: not started.
 - Phase 5 - Packaging, platform confidence, and release discipline. Status: not started.
-- Phase 6 - Product polish and scope expansion. Status: not started.
+- Phase 6 - Product polish and UX refinement. Status: not started.
+- Phase 7 - Advanced diff intelligence. Status: not started.
+- Phase 8 - Migration workflow management. Status: not started.
+- Phase 9 - Plugin and extension architecture. Status: not started.
+- Phase 10 - Team features and shared snapshot registries. Status: not started.
+- Phase 11 - CI/CD integration and automation ecosystem. Status: not started.
+- Phase 12 - Long-term platform evolution. Status: not started.
 
 ## Detailed Phase Plan
 
@@ -391,21 +410,158 @@ Exit criteria:
 - [ ] Installation expectations are documented from actual verification, not assumption.
 - [ ] CI covers the platforms most likely to matter for a desktop SQLite tool.
 
-### Phase 6 - Product polish and scope expansion
+### Phase 6 - Product polish and UX refinement
 
 Status: not started
 
 - [ ] Decide whether views should stay inspect-only or gain diff or export support.
 - [ ] Decide whether indexes and triggers need dedicated UI panels instead of export-only preservation.
-- [ ] Refine the diff UX once scale and responsiveness work are in better shape.
+- [ ] Add a dedicated schema browser panel (tree view of tables, views, indexes, triggers with DDL preview).
+- [ ] Add search/filter across table names, column names, and row data.
+- [ ] Refine the diff UX: syntax-highlighted SQL, collapsible sections, jump-to-change navigation.
+- [ ] Add keyboard shortcuts for core workflows (open file, switch panes, trigger diff, copy export).
+- [ ] Add a theme system (light/dark at minimum; respect system preference).
+- [ ] Add a recent-files list or workspace memory so users can quickly reopen previous sessions.
 - [ ] Reassess whether the current CLI surface and GUI affordances match the product's real audience.
+- [ ] Add user-facing error recovery: clear error states, retry affordances, diagnostic info on failure.
 
 Exit criteria:
 
+- [ ] The app feels like a polished tool, not a prototype.
 - [ ] Any scope expansion is deliberate and documented rather than accidental drift.
 - [ ] Product polish work follows proven correctness and performance improvements instead of masking unfinished core behavior.
 
+### Phase 7 - Advanced diff intelligence
+
+Status: not started
+
+This phase moves Patchworks from "shows you what changed" to "helps you understand why it changed and what to do about it."
+
+- [ ] Add column-level change highlighting within modified rows (cell-level diff, not just row-level).
+- [ ] Add diff filtering: show only additions, only deletions, only modifications, or filter by table.
+- [ ] Add diff statistics dashboard: summary counts, change heatmap by table, largest deltas.
+- [ ] Add semantic diff awareness: detect column renames (vs. drop+add), table renames, and column type changes that preserve data.
+- [ ] Add conflict detection: identify rows modified in both databases relative to a common ancestor snapshot.
+- [ ] Add three-way merge support: given a base snapshot and two diverged databases, identify conflicts and produce a merged migration.
+- [ ] Add diff annotations: let users mark changes as "expected", "investigate", or "reject" for triage workflows.
+- [ ] Add data-type-aware comparison: understand that `INTEGER` vs `INT` is cosmetic, `TEXT` vs `BLOB` is semantic.
+
+Exit criteria:
+
+- [ ] Patchworks provides actionable intelligence about changes, not just raw deltas.
+- [ ] Three-way merge works correctly for non-conflicting changes and clearly surfaces conflicts for manual resolution.
+
+### Phase 8 - Migration workflow management
+
+Status: not started
+
+This phase turns Patchworks from a one-shot diff tool into a migration lifecycle manager.
+
+- [ ] Add migration chain support: generate, store, and replay ordered migration sequences.
+- [ ] Add migration validation: dry-run a generated migration against a copy of the source database and verify the result matches the target.
+- [ ] Add migration rollback generation: produce a reverse migration alongside the forward migration.
+- [ ] Add migration squashing: combine multiple sequential migrations into a single equivalent migration.
+- [ ] Add migration history tracking: store which migrations have been applied to which databases (tracked in the Patchworks store).
+- [ ] Add migration conflict detection: warn when two migrations target the same table or when ordering matters.
+- [ ] Add a `patchworks migrate` CLI command that applies a migration file to a database with safety checks.
+- [ ] Add `--dry-run` mode for all migration operations.
+- [ ] Add migration templates: let users define custom pre/post migration hooks (e.g., "always run VACUUM after migration").
+
+Exit criteria:
+
+- [ ] Users can manage a sequence of database migrations through Patchworks rather than ad-hoc SQL files.
+- [ ] Every migration can be validated before application and rolled back after.
+- [ ] Migration state is tracked persistently, not just in-memory.
+
+### Phase 9 - Plugin and extension architecture
+
+Status: not started
+
+This phase opens Patchworks to community extension without compromising core correctness.
+
+- [ ] Design and implement a plugin trait/interface for custom diff formatters (e.g., HTML report, Markdown, JSON).
+- [ ] Design and implement a plugin trait for custom export targets (e.g., Alembic-style Python migrations, Flyway SQL, Liquibase XML).
+- [ ] Design and implement a plugin trait for custom inspectors (e.g., application-specific table semantics, data validation rules).
+- [ ] Add a plugin discovery and loading mechanism (compiled Rust plugins via dynamic linking, or WASM for sandboxed extensions).
+- [ ] Add a built-in JSON diff output plugin as the reference implementation.
+- [ ] Add a built-in HTML report plugin that generates a standalone diff report.
+- [ ] Add a built-in Markdown report plugin for embedding diffs in documentation or PRs.
+- [ ] Define plugin API stability guarantees and versioning.
+- [ ] Add plugin documentation and a plugin development guide.
+
+Exit criteria:
+
+- [ ] Third-party developers can extend Patchworks output formats and inspection logic without forking.
+- [ ] The plugin API has a stability contract and documentation.
+- [ ] At least three built-in plugins demonstrate the architecture (JSON, HTML, Markdown).
+
+### Phase 10 - Team features and shared snapshot registries
+
+Status: not started
+
+This phase enables Patchworks to work across a team, not just on one developer's machine.
+
+- [ ] Design a snapshot registry protocol: push/pull snapshots to/from a shared store (local directory, S3, or custom backend).
+- [ ] Add `patchworks push` and `patchworks pull` commands for snapshot exchange.
+- [ ] Add snapshot naming, tagging, and annotation (beyond UUID-based storage).
+- [ ] Add snapshot comparison across machines: "show me what changed since the last snapshot anyone on the team took."
+- [ ] Add snapshot retention policies: auto-prune snapshots older than N days or exceeding N total.
+- [ ] Add snapshot integrity verification: checksums and schema fingerprints to detect corruption or tampering.
+- [ ] Add a simple built-in snapshot server (optional, for teams that want a lightweight central registry without S3).
+- [ ] Add access control primitives for shared registries (read-only vs. read-write tokens).
+
+Exit criteria:
+
+- [ ] A team of developers can share database snapshots through a common registry.
+- [ ] Snapshot integrity is verifiable end-to-end.
+- [ ] The shared registry is optional — Patchworks remains fully functional as a local-only tool.
+
+### Phase 11 - CI/CD integration and automation ecosystem
+
+Status: not started
+
+This phase makes Patchworks a first-class citizen in automated pipelines.
+
+- [ ] Add a `patchworks check` command: exit 0 if two databases are identical, exit 1 with a summary if they differ (designed for CI gates).
+- [ ] Add GitHub Actions integration: publish a `dunamismax/patchworks-action` that installs Patchworks and runs diff checks.
+- [ ] Add pre-commit hook support: validate that a database migration file correctly transforms source to target.
+- [ ] Add machine-readable output formats: JSON and JSONL for all CLI commands, suitable for piping into `jq` or downstream tools.
+- [ ] Add `--format` flag across all CLI commands (human, json, jsonl).
+- [ ] Add exit code conventions: document and stabilize exit codes for scripting (0 = identical, 1 = differences found, 2 = error).
+- [ ] Add a `patchworks watch` mode: monitor a database file for changes and trigger a diff against a baseline on every write.
+- [ ] Add webhook/notification support: post diff summaries to Slack, Discord, or arbitrary HTTP endpoints.
+- [ ] Add GitOps workflow documentation: how to version-control SQLite databases and use Patchworks in a GitOps pipeline.
+
+Exit criteria:
+
+- [ ] Patchworks can be dropped into a CI pipeline with a single `patchworks check` command.
+- [ ] Machine-readable output is stable and documented.
+- [ ] At least one real GitHub Actions workflow demonstrates the integration.
+
+### Phase 12 - Long-term platform evolution
+
+Status: not started
+
+This phase tracks longer-horizon capabilities that may reshape the product.
+
+- [ ] Evaluate multi-engine support: could the diff engine work against DuckDB, libSQL, or other embedded databases?
+- [ ] Evaluate embedded scripting: let users write custom diff rules or migration transforms in Lua, Rhai, or WASM.
+- [ ] Evaluate a TUI (terminal UI) mode as a middle ground between full GUI and raw CLI.
+- [ ] Evaluate remote database support: diff databases accessible over SSH, HTTP, or cloud storage without downloading full copies.
+- [ ] Evaluate real-time collaboration: multiple users viewing and annotating the same diff session.
+- [ ] Evaluate database schema visualization: ERD generation from inspected schema.
+- [ ] Evaluate integration with existing migration frameworks (Diesel, SQLx, Alembic, Flyway) as import/export targets.
+- [ ] Evaluate performance profiling integration: not just "what changed" but "what changed that might affect query performance."
+
+Exit criteria:
+
+- [ ] Each evaluation produces a decision document (build, defer, or reject) with rationale.
+- [ ] Any accepted capability follows the same phase-gated development discipline as earlier work.
+- [ ] Platform evolution does not compromise SQLite-first correctness.
+
 ## Open Decisions And Unresolved Scope
+
+### Near-term (Phases 3-5)
 
 - Should the next major investment go first into async loading and performance, or into a headless CLI surface that makes the existing diff engine scriptable?
 - How far should Patchworks go on live or WAL-backed database guarantees before the docs promise more than best-effort behavior?
@@ -413,7 +569,23 @@ Exit criteria:
 - Should `SnapshotStore` remain intentionally simple with one connection per operation, or is a persistent connection worth the complexity once UI-thread loading is addressed?
 - Is the first release-quality support bar Cargo install only, or does the project need stronger desktop packaging before it should be presented as broadly ready?
 
+### Mid-term (Phases 6-9)
+
+- Should the plugin system use compiled Rust dynamic libraries, WASM sandboxed extensions, or both?
+- Should three-way merge be a core feature or a plugin?
+- How should migration chain state be stored — in the Patchworks metadata DB, in a separate migration-specific store, or alongside the target database?
+- Should the theme system use egui's built-in theming or a custom abstraction?
+
+### Long-term (Phases 10-12)
+
+- Is multi-engine support worth the abstraction cost, or should Patchworks stay SQLite-only and do it better than anyone?
+- Should the shared snapshot registry be a separate service or embedded in the Patchworks binary?
+- Does real-time collaboration belong in a desktop tool, or should that be a separate web-based product?
+- Should Patchworks maintain its own migration format, or should it target existing framework formats (Diesel, SQLx, etc.) as first-class output?
+
 ## Risk Register
+
+### Active risks (current phase)
 
 - Background inspection, table loading, and diff execution now report coarse staged progress, but they still do not support cooperative interruption or a user-facing cancel control.
 - SQL export still builds one large in-memory payload and can materialize large tables during seeding.
@@ -422,6 +594,14 @@ Exit criteria:
 - Snapshot matching depends on canonicalized paths and can behave awkwardly if files move.
 - The current lightweight UI is usable, but product polish can easily outrun underlying scale and correctness work if the order slips.
 
+### Strategic risks (long-term)
+
+- Feature breadth expanding faster than test coverage could erode the correctness trust that defines Patchworks.
+- A plugin system introduces API stability obligations that constrain future refactoring.
+- Shared snapshot registries introduce network, auth, and security concerns that are absent in the local-only model.
+- Multi-engine support (Phase 12) could dilute SQLite-specific correctness if abstraction boundaries are drawn wrong.
+- The diff engine is currently synchronous and single-threaded at the table level; parallelizing across tables will be needed for large multi-table diffs but introduces ordering and progress-reporting complexity.
+
 ## Immediate Next Moves
 
 1. Rework SQL export and seeding toward bounded-memory behavior for large databases.
@@ -429,6 +609,8 @@ Exit criteria:
 3. Decide whether headless CLI work starts before or after the next responsiveness hardening slice lands.
 4. Add a macOS CI build smoke path once the current hardening priorities are underway.
 5. Revisit explicit cancellation only if the background-task model grows cooperative checkpoints or a cancellable job runner.
+6. Begin designing the CLI command structure for Phase 4 (subcommand layout, output format conventions, exit codes).
+7. Evaluate `clap` subcommand architecture for `patchworks inspect`, `patchworks diff`, `patchworks export`, `patchworks snapshot`.
 
 ## Progress Log
 

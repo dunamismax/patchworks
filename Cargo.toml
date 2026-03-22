@@ -2,14 +2,25 @@
 name = "patchworks"
 version = "0.1.0"
 edition = "2021"
-description = "Git-style visual diffs for SQLite databases."
+rust-version = "1.75"
+description = "Git-style visual diffs for SQLite databases. Inspect, compare, snapshot, and generate SQL migrations."
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/dunamismax/patchworks"
 homepage = "https://github.com/dunamismax/patchworks"
 documentation = "https://docs.rs/patchworks"
-keywords = ["sqlite", "diff", "database", "gui", "migration"]
-categories = ["database", "gui"]
+keywords = ["sqlite", "diff", "database", "migration", "inspection"]
+categories = ["command-line-utilities", "database", "development-tools", "gui"]
+exclude = [
+    "tests/",
+    "benches/",
+    ".github/",
+    "BUILD.md",
+    "AGENTS.md",
+    "ARCHITECTURE.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+]
 
 [dependencies]
 anyhow = "1.0.102"
