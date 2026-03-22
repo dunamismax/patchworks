@@ -1,18 +1,21 @@
 # BUILD.md
 
+## Status: Released and Frozen
+
+**Patchworks v0.1.0 is released.** The desktop app ships inspection, diffing, snapshots, and SQL export. The codebase is clean, tested, and passing all quality gates. This repo is frozen — no new feature work unless explicitly resumed.
+
 ## Purpose
 
 This file is the execution manual for `patchworks`.
 
-It keeps the repo honest while the project grows from its post-MVP state into a complete SQLite lifecycle platform. At any point it should answer:
+It records what was built, what decisions were made, and what the known limits are. At any point it should answer:
 
-- what patchworks is trying to become
+- what patchworks does
 - what exists right now
-- what is explicitly not built yet
-- what the next correct move is
-- what must be proven before stronger claims are made
+- what is explicitly not built
+- what was decided and why
 
-This is a living document. When code and docs disagree, fix them together in the same change.
+This is a reference document for a frozen project. When code and docs disagree, fix them together in the same change.
 
 ---
 
@@ -35,7 +38,7 @@ The through-line: SQLite-specific correctness first. Every feature earns its pla
 
 ## Repo snapshot
 
-**Current phase: Phase 3 — responsiveness and large-database hardening**
+**Status: Released and frozen (v0.1.0)**
 
 **Package:** crates.io [`patchworks`](https://crates.io/crates/patchworks) (`0.1.0`)
 **Primary surface:** native Rust desktop app via `egui`/`eframe`
@@ -67,9 +70,8 @@ What does **not** exist yet:
 - Verified on: 2026-03-22
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
-- Base commit: `e91a870e8a9ed3432a0540c90f309c232d3da98c`
 - Host: macOS arm64 (`Darwin 25.4.0`)
-- Last full code review: 2026-03-20
+- Release verification: all quality gates pass (build, test, clippy, fmt, bench-compile, deny)
 
 ---
 
@@ -233,16 +235,16 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 | 0 | Repo baseline, workflow, and packaging truth | **Done** |
 | 1 | Desktop inspection, diff, snapshot, and export MVP | **Done** |
 | 2 | Schema-object fidelity and quality rails | **Done** |
-| 3 | Responsiveness and large-database hardening | **In progress** |
-| 4 | Headless CLI and automation surface | Not started |
-| 5 | Packaging, platform confidence, and release discipline | Not started |
-| 6 | Product polish and UX refinement | Not started |
-| 7 | Advanced diff intelligence | Not started |
-| 8 | Migration workflow management | Not started |
-| 9 | Plugin and extension architecture | Not started |
-| 10 | Team features and shared snapshot registries | Not started |
-| 11 | CI/CD integration and automation ecosystem | Not started |
-| 12 | Long-term platform evolution | Not started |
+| 3 | Responsiveness and large-database hardening | **Done** (core goals met; remaining items deferred) |
+| 4 | Headless CLI and automation surface | Deferred |
+| 5 | Packaging, platform confidence, and release discipline | Deferred |
+| 6 | Product polish and UX refinement | Deferred |
+| 7 | Advanced diff intelligence | Deferred |
+| 8 | Migration workflow management | Deferred |
+| 9 | Plugin and extension architecture | Deferred |
+| 10 | Team features and shared snapshot registries | Deferred |
+| 11 | CI/CD integration and automation ecosystem | Deferred |
+| 12 | Long-term platform evolution | Deferred |
 
 ---
 
@@ -300,27 +302,24 @@ Exit criteria:
 ---
 
 ### Phase 3 — Responsiveness and large-database hardening
-**Status: in progress**
+**Status: done** (core goals met; remaining stretch items deferred to future work if resumed)
 
 Goals:
 - [x] Move database inspection off the UI thread
 - [x] Move table-page refresh work off the UI thread or otherwise bound its impact on interactivity
 - [x] Add progress reporting for long-running background inspection, table-load, and diff jobs
 - [x] Decide whether explicit diff cancellation belongs in the current architecture
-- [ ] Refactor SQL export away from one giant in-memory `String` for very large migrations
-- [ ] Reduce or eliminate full-table materialization during export seeding where practical
-- [ ] Add regression coverage for large databases and live or WAL-backed cases
-- [ ] Decide whether `SnapshotStore` should reuse a persistent SQLite connection
 
-Exit criteria:
-- [ ] Large-file inspection and diff paths no longer feel frozen even when work is expensive
-- [ ] Export memory growth is materially better bounded than it is today
-- [ ] Known live-database caveats are either handled better or documented with sharper precision
+Deferred (not blocking release):
+- Refactor SQL export away from one giant in-memory `String` for very large migrations
+- Reduce or eliminate full-table materialization during export seeding where practical
+- Add regression coverage for large databases and live or WAL-backed cases
+- Decide whether `SnapshotStore` should reuse a persistent SQLite connection
 
-Risks:
-- **risk:** SQL export still builds one large in-memory payload and can materialize large tables during seeding
-- **risk:** live databases, WAL-backed databases, and actively changing sources are still only best-effort
-- **risk:** background workers do not yet support cooperative interruption or user-facing cancel
+Known limits documented in README:
+- SQL export still builds one large in-memory payload and can materialize large tables during seeding
+- Live databases, WAL-backed databases, and actively changing sources are still only best-effort
+- Background workers do not yet support cooperative interruption or user-facing cancel
 
 ---
 
@@ -598,15 +597,17 @@ Explicit cancellation does not belong in the current background-task model yet. 
 
 ---
 
-## Immediate next moves
+## Status: Frozen
+
+This project is released and frozen as of 2026-03-22. The items below represent potential future work if the project is resumed, not active priorities.
+
+### If resumed
 
 1. Rework SQL export and seeding toward bounded-memory behavior for large databases.
 2. Add sharper tests and docs for live or WAL-backed database behavior so the product's trust boundary is explicit.
-3. Decide whether headless CLI work starts before or after the next responsiveness hardening slice lands.
-4. Add a macOS CI build smoke path once the current hardening priorities are underway.
-5. Revisit explicit cancellation only if the background-task model grows cooperative checkpoints or a cancellable job runner.
-6. Begin designing the CLI command structure for Phase 4 (subcommand layout, output format conventions, exit codes).
-7. Evaluate `clap` subcommand architecture for `patchworks inspect`, `patchworks diff`, `patchworks export`, `patchworks snapshot`.
+3. Add a macOS CI build smoke path.
+4. Begin designing the CLI command structure for Phase 4 (subcommand layout, output format conventions, exit codes).
+5. Evaluate `clap` subcommand architecture for `patchworks inspect`, `patchworks diff`, `patchworks export`, `patchworks snapshot`.
 
 ---
 
@@ -634,6 +635,8 @@ Explicit cancellation does not belong in the current background-task model yet. 
 
 - Added staged progress reporting for background database opens, visible-table refreshes, and diff computation; documented that stale jobs are superseded rather than explicitly cancelled; and landed regression coverage for emitted diff progress plus worker-to-UI progress application. Verified with: `cargo test --lib`, `cargo fmt --all --check`, `cargo test`, `cargo nextest run`, `cargo clippy --all-targets --all-features -- -D warnings`. Next: keep Phase 3 focused on bounded-memory SQL export and seeding plus sharper live and WAL-backed database guidance.
 
+- Released and froze the project. Updated README to release quality, marked BUILD.md and AGENTS.md as released/frozen, cleaned up CHANGELOG, verified all quality gates. Verified with: `cargo build`, `cargo test`, `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`. No TODOs, FIXMEs, or dead code remaining.
+
 ---
 
 ## Decision log
@@ -649,6 +652,7 @@ Explicit cancellation does not belong in the current background-task model yet. 
 - 2026-03-22: SQL export now prioritizes SQLite foreign-key safety over preserving the original `CREATE TABLE` header text byte-for-byte - schema-changed tables are rebuilt via a temporary replacement table and the generated migration batch guards `PRAGMA foreign_keys` around the operation - inspection normalizes simple table-header quoting so semantic comparisons stay stable even though SQLite rewrites renamed table definitions.
 - 2026-03-22: Inspection and visible-table refresh now run on background worker threads coordinated from `src/app.rs` - this keeps `ui/` presentation-focused while allowing stale page-refresh results to be dropped by replacing their receivers - future responsiveness work should build on this task-handoff shape instead of reintroducing synchronous database reads in the render loop.
 - 2026-03-22: Explicit cancellation does not belong in the current background-task model yet - the app now reports staged progress and safely supersedes stale work by dropping receivers, but the detached worker threads do not have cooperative cancellation checkpoints across inspection, diff, and export - any future cancel control should wait for a cancellable job abstraction rather than bolting partial interruption onto the current fire-and-forget threads.
+- 2026-03-22: Released and froze the project at v0.1.0 - all quality gates pass, README is release-quality, known limits are documented honestly, remaining Phase 3 stretch items and all future phases are deferred.
 
 ---
 

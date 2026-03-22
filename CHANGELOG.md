@@ -4,6 +4,10 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 
 ## [Unreleased]
 
+No changes since release freeze.
+
+## [0.1.0-post] - 2026-03-22
+
 ### Added
 - Background processing for database inspection, table loading, and diff computation
 - Staged progress reporting for long-running operations
@@ -19,8 +23,9 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 ### Changed
 - SQL export now rebuilds schema-changed tables via temporary replacement for FK safety
 - Row diff no longer assumes `rowid` exists when shared primary keys diverge
-- Expanded BUILD.md from 6 phases to 13 phases (full long-term roadmap)
-- README.md rewritten with product narrative and vision
+- README.md updated to release quality
+- BUILD.md marked as released and frozen
+- All quality gates verified passing
 
 ## [0.1.0] - 2026-03-21
 

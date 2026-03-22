@@ -58,11 +58,11 @@ cargo run -- --help
 
 ## Current State (2026-03-22)
 
-Phases 0-2 complete. Phase 3 in progress (background tasks + progress landed, streaming export + live-DB hardening remaining).
+**Released and frozen (v0.1.0).** Phases 0-3 complete. All quality gates pass.
 
 What works: inspect, browse, diff (schema + rows), snapshots, SQL export with FK safety and trigger preservation, background processing with progress.
 
-What doesn't yet: headless CLI, view diffing, explicit cancel, bounded-memory export, macOS CI.
+Known limits: no headless CLI, views are inspect-only, no explicit cancel, large exports are memory-resident, best-effort on live/WAL databases.
 
 ## Known Caveats
 
