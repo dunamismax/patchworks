@@ -1,9 +1,5 @@
 # BUILD.md
 
-## Status: Released, Active, Post-v0.1.0
-
-**Patchworks v0.1.0 is released, and the project is still active.** The desktop app already ships inspection, diffing, snapshots, and SQL export. The next job is to extend that trustworthy core deliberately: harden scale-sensitive paths, define the headless automation surface, and raise platform confidence without pretending unfinished work is done.
-
 ## Purpose
 
 This file is the execution manual for `patchworks`.
@@ -37,7 +33,11 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ---
 
-## Current operating posture
+## Current release posture
+
+**Patchworks v0.1.0 is released, and the project is still active.** The desktop app already ships inspection, diffing, snapshots, and SQL export. The next job is to extend that trustworthy core deliberately: harden scale-sensitive paths, define the headless automation surface, and raise platform confidence without pretending unfinished work is done.
+
+## Current execution posture
 
 Patchworks is in the healthy middle state between prototype and finished platform.
 
@@ -170,45 +170,6 @@ Checkboxes describe landing state. Unchecked work should be specific enough to b
 
 ---
 
-## Current priority stack
-
-### Priority 1 — Finish the Phase 3 hardening story
-
-Release proved the product is real. It did **not** prove the remaining scale-sensitive edges are solved.
-
-Still-open hardening work:
-
-- Bound SQL export memory use for large migrations
-- Reduce or eliminate full-table materialization during export seeding where practical
-- Tighten the trust boundary for live and WAL-backed databases with sharper tests and clearer docs
-- Revisit snapshot-store connection strategy only if profiling or contention evidence says it matters
-
-### Priority 2 — Define the Phase 4 CLI without forking the backend
-
-Patchworks needs a headless surface, but the CLI must reuse the same truth layer as the desktop app.
-
-The next meaningful CLI work is not just wiring `clap`; it is deciding:
-
-- subcommand layout
-- output contract
-- exit codes
-- which commands are worth stabilizing first
-- what verification and fixtures prove CLI/GUI parity
-
-### Priority 3 — Raise platform confidence for the next release-quality bar
-
-The product is desktop-shaped. Linux-only CI and unrecorded install verification are still a gap.
-
-Near-term release-confidence work:
-
-- re-verify install paths and record the result
-- add a macOS CI build smoke path
-- decide whether Cargo install alone is enough or whether desktop packaging belongs in the next release band
-
-If a code pass does not obviously move one of these priorities, it should say why.
-
----
-
 ## Quality gates
 
 ### Standard gate (all phases)
@@ -281,6 +242,45 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 - `cargo deny check` must pass as part of the standard quality gate
 - Development-only dependencies stay in `[dev-dependencies]`
 - The `rusqlite` `bundled` feature is used to ship SQLite without requiring a system install
+
+---
+
+## Current priority stack
+
+### Priority 1 — Finish the Phase 3 hardening story
+
+Release proved the product is real. It did **not** prove the remaining scale-sensitive edges are solved.
+
+Still-open hardening work:
+
+- Bound SQL export memory use for large migrations
+- Reduce or eliminate full-table materialization during export seeding where practical
+- Tighten the trust boundary for live and WAL-backed databases with sharper tests and clearer docs
+- Revisit snapshot-store connection strategy only if profiling or contention evidence says it matters
+
+### Priority 2 — Define the Phase 4 CLI without forking the backend
+
+Patchworks needs a headless surface, but the CLI must reuse the same truth layer as the desktop app.
+
+The next meaningful CLI work is not just wiring `clap`; it is deciding:
+
+- subcommand layout
+- output contract
+- exit codes
+- which commands are worth stabilizing first
+- what verification and fixtures prove CLI/GUI parity
+
+### Priority 3 — Raise platform confidence for the next release-quality bar
+
+The product is desktop-shaped. Linux-only CI and unrecorded install verification are still a gap.
+
+Near-term release-confidence work:
+
+- re-verify install paths and record the result
+- add a macOS CI build smoke path
+- decide whether Cargo install alone is enough or whether desktop packaging belongs in the next release band
+
+If a code pass does not obviously move one of these priorities, it should say why.
 
 ---
 
@@ -664,7 +664,7 @@ v0.1.0 is the first stable baseline, not the end of the repo's purpose. BUILD.md
 
 ---
 
-## Next planned build passes
+## Immediate next moves
 
 If somebody picks this repo up for the next substantive pass, the most credible sequence is:
 
