@@ -8,7 +8,7 @@ Patchworks is a native desktop tool that treats SQLite databases the way `git di
 
 No cloud. No account. No daemon. One binary, your databases, the truth.
 
-> **Status:** v0.3.0 published on crates.io. SQLite inspection, schema diffing, row diffing, local snapshot storage, SQL export, schema browser with DDL preview, collapsible diff sections, table search/filter, keyboard shortcuts, light/dark/system themes, and recent files are available in both the desktop GUI and headless CLI. View diff/export remains ahead.
+> **Status:** v0.3.0 published on crates.io. SQLite inspection, schema diffing, row diffing, local snapshot storage, SQL export, schema browser with DDL preview, collapsible diff sections, table search/filter, keyboard shortcuts, light/dark/system themes, and recent files are available in both the desktop GUI and headless CLI. View diff/export and advanced diff intelligence are next. A Tauri 2 desktop shell is planned to provide installable packaging and richer UI alongside the existing egui surface. See [BUILD.md](BUILD.md) for the full roadmap.
 
 ## Why patchworks?
 

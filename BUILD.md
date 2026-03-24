@@ -309,6 +309,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 10 | Team features and shared snapshot registries | **Exploratory** |
 | 11 | CI/CD integration and automation ecosystem | **Planned** |
 | 12 | Long-term platform evolution | **Exploratory** |
+| 13 | Tauri 2 desktop shell | **Planned** |
 
 Phases 0-5 are the shipped foundation. Phase 6 (product polish) is the next active build step.
 
@@ -567,6 +568,28 @@ Goals:
 Exit criteria:
 - [ ] Each exploration produces a build, defer, or reject decision with rationale
 - [ ] Any accepted capability follows the same phase-gated discipline as the shipped desktop core
+
+---
+
+### Phase 13 — Tauri 2 desktop shell
+**Status: planned**
+
+Patchworks currently ships as a native egui/eframe desktop app. Tauri 2 would provide a second desktop shell using the React + Vite browser-facing stack while keeping the Rust core untouched. This unifies with the broader React + Vite lane used across other products and opens a path to richer UI capabilities (rich text diff rendering, syntax-highlighted SQL preview, responsive layouts) without replacing the headless CLI or the existing egui surface.
+
+Goals:
+- [ ] scaffold a Tauri 2 shell alongside the existing egui app (both shells consume the same Rust core crates)
+- [ ] expose `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` as Tauri commands
+- [ ] build the diff and inspection views using React + TanStack + shadcn/ui
+- [ ] add syntax-highlighted SQL export preview in the browser shell
+- [ ] keep the egui surface available as the lightweight/portable option
+- [ ] keep the headless CLI available for automation and CI
+- [ ] add Tauri-specific packaging for macOS (.dmg) and Linux (AppImage) as the first real installer story
+- [ ] decide whether the Tauri shell replaces the egui surface long-term or coexists as a separate distribution
+
+Exit criteria:
+- [ ] the Tauri shell provides the same core capabilities as the egui desktop app (inspect, diff, export, snapshots)
+- [ ] packaging produces installable artifacts beyond `cargo install`
+- [ ] the Rust core crates remain shell-agnostic
 
 ---
 
