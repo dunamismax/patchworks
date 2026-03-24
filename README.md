@@ -6,13 +6,15 @@ Patchworks is a native desktop tool that treats SQLite databases the way `git di
 
 No cloud. No account. No daemon. One binary, your databases, the truth.
 
+> **Status:** SQLite inspection, schema diffing, row diffing, local snapshot storage, and SQL export are implemented in the desktop app today. Headless CLI workflows and view diff/export remain ahead.
+
 ## Why patchworks?
 
 Every team that ships software backed by SQLite eventually hits the same wall: "what actually changed in this database?" Maybe it's a production config store that drifted. Maybe it's a mobile app's local database after a migration. Maybe it's two copies of the same file and nobody remembers which one is current.
 
 The existing options are grim — hex editors, ad-hoc scripts, manually eyeballing `sqlite3` output. Patchworks replaces all of that with a purpose-built comparison engine and a fast native UI.
 
-## Features
+## What Ships Today
 
 | Capability | Status |
 |---|---|
