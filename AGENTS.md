@@ -58,17 +58,18 @@ cargo run -- --help
 
 ## Current State (2026-03-24)
 
-**Released (v0.1.0) and still active.** Phases 0-2 are shipped, Phase 3 hardening remains the live lane, and Phases 4-5 are the next credible build steps.
+**Released (v0.1.0) and still active.** Phases 0-3 are shipped. Phase 4 (headless CLI) and Phase 5 (platform confidence) are the next build steps.
 
-What works: inspect, browse, diff (schema + rows), snapshots, SQL export with FK safety and trigger preservation, background processing with progress.
+What works: inspect, browse, diff (schema + rows), snapshots, SQL export with FK safety and trigger preservation, background processing with progress, streaming bounded-memory export to file.
 
-Known limits: no headless CLI yet, views are inspect-only, no explicit cancel, large exports are still memory-heavy, best-effort on live/WAL databases.
+Known limits: no headless CLI yet, views are inspect-only, no explicit cancel, GUI preview path still collects full export in memory, best-effort on live/WAL databases (read-only access; concurrent writes may produce inconsistent results).
 
 ## Known Caveats
 
 - SQL export correctness > minimality.
 - No explicit cancel — stale work is dropped.
-- Live/WAL/encrypted databases are best-effort.
+- Live/WAL/encrypted databases are best-effort (read-only; concurrent writes may cause inconsistent reads).
 - `~/.patchworks/` is local machine state, not project state.
 - `cargo bench --no-run` is slow (bundled SQLite compiled in release mode).
 - BUILD.md is the primary handoff — read it before touching export logic or verification workflows.
+- `write_export` is the bounded-memory path; `export_diff_as_sql` still collects to `String` for GUI preview.

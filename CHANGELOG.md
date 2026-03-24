@@ -4,9 +4,19 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 
 ## [Unreleased]
 
+### Added
+- Streaming SQL export API (`write_export`) that writes one statement at a time to any `Write` sink for bounded-memory large migrations
+- Row-at-a-time table seeding via `for_each_row` — export no longer materializes entire tables in memory
+- WAL-mode database regression test covering inspection, diffing, and export application
+- Streaming export tests: parity with in-memory export, file-based round-trip, and large-table (5000+ rows) verification
+- Edge-case regression tests for empty databases and table-added-from-empty diffs
+- Explicit live/WAL trust boundary documentation in README.md
+
 ### Changed
 - Reframed `BUILD.md` as an active post-release execution manual instead of a closed-out project memo
 - Aligned `AGENTS.md` with the active roadmap posture after v0.1.0
+- Phase 3 (responsiveness and large-database hardening) marked complete
+- SQL export internals refactored from `Vec<String>` accumulation to streaming `Write` output
 
 ## [0.1.0-post] - 2026-03-22
 

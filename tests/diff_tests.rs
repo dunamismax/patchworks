@@ -1,9 +1,11 @@
+use std::io::BufWriter;
 use std::path::Path;
 
 use patchworks::db::differ::diff_databases;
 use patchworks::db::inspector::{inspect_database, read_table_page};
 use patchworks::db::snapshot::SnapshotStore;
 use patchworks::db::types::{SortDirection, SqlValue, TableQuery, TableSort};
+use patchworks::diff::export::write_export;
 use rusqlite::Connection;
 use tempfile::TempDir;
 
@@ -535,4 +537,264 @@ fn sql_export_preserves_schema_objects_and_avoids_trigger_side_effects() {
     let right_audit =
         read_table_page(&right_path, "audit", &TableQuery::default()).expect("right audit");
     assert_eq!(generated_audit.rows, right_audit.rows);
+}
+
+#[test]
+fn wal_mode_databases_can_be_inspected_and_diffed() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = temp_dir.path().join("wal-left.sqlite");
+    let right_path = temp_dir.path().join("wal-right.sqlite");
+
+    let left_conn = Connection::open(&left_path).expect("open left");
+    left_conn
+        .execute_batch(
+            "
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+            INSERT INTO items (id, name) VALUES (1, 'alpha'), (2, 'beta');
+            ",
+        )
+        .expect("setup left wal db");
+    drop(left_conn);
+
+    let right_conn = Connection::open(&right_path).expect("open right");
+    right_conn
+        .execute_batch(
+            "
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+            INSERT INTO items (id, name) VALUES (1, 'alpha'), (2, 'beta-changed'), (3, 'gamma');
+            ",
+        )
+        .expect("setup right wal db");
+    drop(right_conn);
+
+    let left_summary = inspect_database(&left_path).expect("inspect wal left");
+    assert_eq!(left_summary.tables.len(), 1);
+    assert_eq!(left_summary.tables[0].row_count, 2);
+
+    let diff = diff_databases(&left_path, &right_path).expect("diff wal databases");
+    let items = &diff.data_diffs[0];
+    assert_eq!(items.stats.modified, 1);
+    assert_eq!(items.stats.added, 1);
+    assert_eq!(items.stats.unchanged, 1);
+
+    let generated_path = temp_dir.path().join("wal-generated.sqlite");
+    std::fs::copy(&left_path, &generated_path).expect("copy left db");
+    // Also copy the WAL file if it exists so the copy is complete
+    let left_wal = left_path.with_extension("sqlite-wal");
+    let generated_wal = generated_path.with_extension("sqlite-wal");
+    if left_wal.exists() {
+        std::fs::copy(&left_wal, &generated_wal).expect("copy wal file");
+    }
+
+    let generated = Connection::open(&generated_path).expect("open generated db");
+    generated
+        .execute_batch(&diff.sql_export)
+        .expect("apply exported sql to wal db");
+
+    let generated_items =
+        read_table_page(&generated_path, "items", &TableQuery::default()).expect("generated items");
+    let right_items =
+        read_table_page(&right_path, "items", &TableQuery::default()).expect("right items");
+    assert_eq!(generated_items.rows, right_items.rows);
+}
+
+#[test]
+fn streaming_export_matches_in_memory_export() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db(&temp_dir, "stream-left.sqlite", "data_left");
+    let right_path = create_db(&temp_dir, "stream-right.sqlite", "data_right");
+
+    let diff = diff_databases(&left_path, &right_path).expect("compute diff");
+
+    let mut streamed = Vec::new();
+    write_export(
+        &mut streamed,
+        &std::path::PathBuf::from(&diff.right.path),
+        &diff.left,
+        &diff.right,
+        &diff.schema,
+        &diff.data_diffs,
+    )
+    .expect("streaming export");
+    let streamed_sql = String::from_utf8(streamed).expect("valid utf8");
+
+    assert_eq!(
+        streamed_sql, diff.sql_export,
+        "streaming export should produce identical output to in-memory export"
+    );
+}
+
+#[test]
+fn streaming_export_to_file_produces_valid_migration() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db(&temp_dir, "file-export-left.sqlite", "data_left");
+    let right_path = create_db(&temp_dir, "file-export-right.sqlite", "data_right");
+    let export_path = temp_dir.path().join("migration.sql");
+    let generated_path = temp_dir.path().join("file-export-generated.sqlite");
+
+    let diff = diff_databases(&left_path, &right_path).expect("compute diff");
+
+    // Write export to a file via the streaming API
+    let file = std::fs::File::create(&export_path).expect("create export file");
+    let mut writer = BufWriter::new(file);
+    write_export(
+        &mut writer,
+        &std::path::PathBuf::from(&diff.right.path),
+        &diff.left,
+        &diff.right,
+        &diff.schema,
+        &diff.data_diffs,
+    )
+    .expect("write export to file");
+    drop(writer);
+
+    // Read it back and apply to a copy of the left database
+    let exported_sql = std::fs::read_to_string(&export_path).expect("read export file");
+    std::fs::copy(&left_path, &generated_path).expect("copy left db");
+
+    let generated = Connection::open(&generated_path).expect("open generated db");
+    generated
+        .execute_batch(&exported_sql)
+        .expect("apply file-exported sql");
+
+    let generated_items =
+        read_table_page(&generated_path, "items", &TableQuery::default()).expect("generated items");
+    let right_items =
+        read_table_page(&right_path, "items", &TableQuery::default()).expect("right items");
+    assert_eq!(generated_items.rows, right_items.rows);
+}
+
+#[test]
+fn large_table_export_streams_without_full_materialization() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = temp_dir.path().join("large-left.sqlite");
+    let right_path = temp_dir.path().join("large-right.sqlite");
+
+    // Create a table with enough rows to be meaningful but not slow
+    let left_conn = Connection::open(&left_path).expect("open left");
+    left_conn
+        .execute_batch("CREATE TABLE records (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);")
+        .expect("create left table");
+    {
+        let mut insert = left_conn
+            .prepare("INSERT INTO records (id, payload) VALUES (?, ?)")
+            .expect("prepare insert");
+        for i in 1..=5000 {
+            insert
+                .execute(rusqlite::params![i, format!("left-payload-{i}")])
+                .expect("insert row");
+        }
+    }
+    drop(left_conn);
+
+    let right_conn = Connection::open(&right_path).expect("open right");
+    right_conn
+        .execute_batch("CREATE TABLE records (id INTEGER PRIMARY KEY, payload TEXT NOT NULL);")
+        .expect("create right table");
+    {
+        let mut insert = right_conn
+            .prepare("INSERT INTO records (id, payload) VALUES (?, ?)")
+            .expect("prepare insert");
+        for i in 1..=5000 {
+            let payload = if i % 100 == 0 {
+                format!("modified-payload-{i}")
+            } else {
+                format!("left-payload-{i}")
+            };
+            insert
+                .execute(rusqlite::params![i, payload])
+                .expect("insert row");
+        }
+        // Add 100 new rows
+        for i in 5001..=5100 {
+            insert
+                .execute(rusqlite::params![i, format!("new-payload-{i}")])
+                .expect("insert new row");
+        }
+    }
+    drop(right_conn);
+
+    let diff = diff_databases(&left_path, &right_path).expect("diff large tables");
+    let records = &diff.data_diffs[0];
+    assert_eq!(records.stats.modified, 50); // every 100th row out of 5000
+    assert_eq!(records.stats.added, 100);
+    assert_eq!(records.stats.unchanged, 4950);
+
+    // Streaming export to file should work
+    let export_path = temp_dir.path().join("large-migration.sql");
+    let file = std::fs::File::create(&export_path).expect("create export file");
+    let mut writer = BufWriter::new(file);
+    write_export(
+        &mut writer,
+        &right_path,
+        &diff.left,
+        &diff.right,
+        &diff.schema,
+        &diff.data_diffs,
+    )
+    .expect("stream large export");
+    drop(writer);
+
+    // Apply and verify
+    let generated_path = temp_dir.path().join("large-generated.sqlite");
+    std::fs::copy(&left_path, &generated_path).expect("copy left db");
+    let exported_sql = std::fs::read_to_string(&export_path).expect("read export");
+    let generated = Connection::open(&generated_path).expect("open generated db");
+    generated
+        .execute_batch(&exported_sql)
+        .expect("apply large export");
+
+    let gen_summary = inspect_database(&generated_path).expect("inspect generated");
+    let right_summary = inspect_database(&right_path).expect("inspect right");
+    assert_eq!(
+        gen_summary.tables[0].row_count,
+        right_summary.tables[0].row_count
+    );
+}
+
+#[test]
+fn diff_handles_empty_databases() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db_with_sql(&temp_dir, "empty-left.sqlite", "");
+    let right_path = create_db_with_sql(&temp_dir, "empty-right.sqlite", "");
+
+    let diff = diff_databases(&left_path, &right_path).expect("diff empty databases");
+    assert!(diff.schema.added_tables.is_empty());
+    assert!(diff.schema.removed_tables.is_empty());
+    assert!(diff.data_diffs.is_empty());
+    assert!(diff.sql_export.contains("PRAGMA foreign_keys=OFF;"));
+    assert!(diff.sql_export.contains("COMMIT;"));
+}
+
+#[test]
+fn diff_handles_table_added_from_empty() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let left_path = create_db_with_sql(&temp_dir, "add-from-empty-left.sqlite", "");
+    let right_path = create_db_with_sql(
+        &temp_dir,
+        "add-from-empty-right.sqlite",
+        "
+        CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
+        INSERT INTO items (id, name) VALUES (1, 'first'), (2, 'second');
+        ",
+    );
+
+    let diff = diff_databases(&left_path, &right_path).expect("diff add from empty");
+    assert_eq!(diff.schema.added_tables.len(), 1);
+    assert_eq!(diff.schema.added_tables[0].name, "items");
+
+    let generated_path = temp_dir.path().join("add-from-empty-generated.sqlite");
+    std::fs::copy(&left_path, &generated_path).expect("copy left db");
+    let generated = Connection::open(&generated_path).expect("open generated");
+    generated
+        .execute_batch(&diff.sql_export)
+        .expect("apply export");
+
+    let gen_items =
+        read_table_page(&generated_path, "items", &TableQuery::default()).expect("gen items");
+    let right_items =
+        read_table_page(&right_path, "items", &TableQuery::default()).expect("right items");
+    assert_eq!(gen_items.rows, right_items.rows);
 }

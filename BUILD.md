@@ -42,8 +42,8 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 Patchworks is in the healthy middle state between prototype and finished platform.
 
 - **Shipped baseline:** v0.1.0 exists on crates.io and is already useful as a native desktop SQLite inspection and comparison tool.
-- **Active lane:** finish the hardening work that release exposed, especially around large exports, live/WAL database behavior, and CLI shaping.
-- **Near-term expansion:** introduce a real headless surface without splitting the truth layer between GUI code and CLI code.
+- **Hardening complete:** Phase 3 landed streaming export, bounded-memory table seeding, WAL regression coverage, and explicit trust-boundary documentation.
+- **Active lane:** define the headless CLI surface (Phase 4) and raise platform confidence (Phase 5).
 - **Discipline:** roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -75,17 +75,16 @@ What does **not** exist yet:
 - Headless CLI commands for inspect, diff, SQL export, snapshot listing, or snapshot cleanup
 - View diffing or export support
 - Explicit cancel control for long-running background jobs
-- Bounded-memory guarantees for very large SQL exports
 - Formal desktop packaging or installer automation beyond Cargo packaging
-- Strong guarantees for heavily changing live databases, WAL-backed files, or other edge-heavy runtime conditions
+- Strong guarantees for heavily changing live databases or actively-written WAL-backed files (read-only access works, but concurrent writes during inspection can produce inconsistent results)
 
 ### Recorded verification baseline
 
-- Verified on: 2026-03-22
+- Verified on: 2026-03-24
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
 - Host: macOS arm64 (`Darwin 25.4.0`)
-- Release verification: build, test, clippy, fmt, bench-compile, deny, and CLI help were recorded passing
+- Release verification: build, test (34 tests), nextest, clippy, fmt, bench-compile, deny, and CLI help were recorded passing
 
 This baseline is still useful, but it is not permission to stop verifying. Any later change that touches product behavior should record its own narrower proof.
 
@@ -204,7 +203,7 @@ Do not record these as passed unless they were actually run in the repo. If a ga
 
 ### Currently recorded verified commands
 
-Re-verified on 2026-03-22:
+Re-verified on 2026-03-24:
 
 - `cargo build`
 - `cargo test`
@@ -247,18 +246,7 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 
 ## Current priority stack
 
-### Priority 1 — Finish the Phase 3 hardening story
-
-Release proved the product is real. It did **not** prove the remaining scale-sensitive edges are solved.
-
-Still-open hardening work:
-
-- Bound SQL export memory use for large migrations
-- Reduce or eliminate full-table materialization during export seeding where practical
-- Tighten the trust boundary for live and WAL-backed databases with sharper tests and clearer docs
-- Revisit snapshot-store connection strategy only if profiling or contention evidence says it matters
-
-### Priority 2 — Define the Phase 4 CLI without forking the backend
+### Priority 1 — Define the Phase 4 CLI without forking the backend
 
 Patchworks needs a headless surface, but the CLI must reuse the same truth layer as the desktop app.
 
@@ -270,7 +258,7 @@ The next meaningful CLI work is not just wiring `clap`; it is deciding:
 - which commands are worth stabilizing first
 - what verification and fixtures prove CLI/GUI parity
 
-### Priority 3 — Raise platform confidence for the next release-quality bar
+### Priority 2 — Raise platform confidence for the next release-quality bar
 
 The product is desktop-shaped. Linux-only CI and unrecorded install verification are still a gap.
 
@@ -291,7 +279,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 0 | Repo baseline, workflow, and packaging truth | **Done** |
 | 1 | Desktop inspection, diff, snapshot, and export MVP | **Done** |
 | 2 | Schema-object fidelity and quality rails | **Done** |
-| 3 | Responsiveness and large-database hardening | **In progress** |
+| 3 | Responsiveness and large-database hardening | **Done** |
 | 4 | Headless CLI and automation surface | **Queued** |
 | 5 | Packaging, platform confidence, and release discipline | **Queued** |
 | 6 | Product polish and UX refinement | **Planned** |
@@ -302,7 +290,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 11 | CI/CD integration and automation ecosystem | **Planned** |
 | 12 | Long-term platform evolution | **Exploratory** |
 
-Phases 0-2 are the shipped foundation. Phase 3 is still the active hardening lane. Phases 4-5 are the next likely build steps once the remaining hard edges are better bounded.
+Phases 0-3 are the shipped foundation. Phase 4 (headless CLI) and Phase 5 (platform confidence) are the next active build steps.
 
 ---
 
@@ -360,30 +348,31 @@ Exit criteria:
 ---
 
 ### Phase 3 — Responsiveness and large-database hardening
-**Status: in progress**
+**Status: done**
 
 Shipped already:
 - [x] Move database inspection off the UI thread
 - [x] Move table-page refresh work off the UI thread or otherwise bound its impact on interactivity
 - [x] Add progress reporting for long-running background inspection, table-load, and diff jobs
 - [x] Decide whether explicit diff cancellation belongs in the current architecture
-
-Still open:
-- [ ] Refactor SQL export away from one giant in-memory `String` for very large migrations
-- [ ] Reduce or eliminate full-table materialization during export seeding where practical
-- [ ] Add regression coverage and explicit operational guidance for live, WAL-backed, and heavily changing databases
-- [ ] Decide whether large-table diffing needs table-level parallelism or whether profiling still favors the current single-threaded order
-- [ ] Revisit whether `SnapshotStore` should reuse a persistent SQLite connection only if profiling proves it matters
+- [x] Refactor SQL export to a streaming `Write`-based API (`write_export`) that flushes one statement at a time
+- [x] Replace full-table materialization during export seeding with row-at-a-time streaming via `for_each_row`
+- [x] Add regression coverage for WAL-mode databases (inspection, diffing, and export application)
+- [x] Add regression coverage for streaming export (parity with in-memory, file-based round-trip, large-table seeding)
+- [x] Add regression coverage for edge cases (empty databases, table-added-from-empty)
+- [x] Document the live/WAL trust boundary explicitly in README and BUILD.md
+- [x] Decide that large-table diffing does not need table-level parallelism (see decision-0013)
+- [x] Decide that `SnapshotStore` stays simple with per-operation connections (see decision-0014)
 
 Exit criteria:
-- [ ] Export generation has a bounded-memory story for large migrations, or the documented limits are precise enough to be trusted
-- [ ] The trust boundary for live/WAL-backed databases is explicit in both tests and docs
-- [ ] Remaining performance tradeoffs are conscious decisions, not accidental leftovers from the MVP
+- [x] Export generation has a bounded-memory story: `write_export` streams to any `Write` sink with one row at a time; the convenience `export_diff_as_sql` still collects to `String` for GUI preview
+- [x] The trust boundary for live/WAL-backed databases is explicit in tests (WAL test) and docs (README, BUILD.md)
+- [x] Remaining performance tradeoffs are conscious decisions: single-threaded diff order and per-operation snapshot connections are documented decisions, not accidental leftovers
 
-Known limits carried by this phase:
-- SQL export still builds one large in-memory payload and can materialize large tables during seeding
-- Live databases, WAL-backed databases, and actively changing sources are still only best-effort
-- Background workers do not yet support cooperative interruption or user-facing cancel
+Residual limits acknowledged:
+- The in-memory convenience path (`export_diff_as_sql`) used for GUI preview still collects the full export into a `String`; very large migrations shown in-UI may still use significant memory
+- Background workers do not yet support cooperative interruption or user-facing cancel (deferred to a future cancellable job abstraction per decision-0011)
+- Row-level diff results (`TableDataDiff`) are still fully materialized in memory; streaming the diff result itself would require a deeper architectural change
 
 ---
 
@@ -623,6 +612,16 @@ Explicit cancellation does not belong in the current background-task model yet. 
 
 v0.1.0 is the first stable baseline, not the end of the repo's purpose. BUILD.md should track the next credible build sequence after release rather than reading like the project is done forever.
 
+### decision-0013: Single-threaded table-level diffing is sufficient
+**Date:** 2026-03-24
+
+Large-table diffing stays single-threaded at the table level. The streaming merge is already I/O-bound against SQLite reads; parallelizing across tables would add ordering and progress-reporting complexity without clear throughput gains. If profiling later shows CPU-bound bottlenecks, this decision can be revisited with evidence.
+
+### decision-0014: SnapshotStore keeps per-operation connections
+**Date:** 2026-03-24
+
+`SnapshotStore` continues opening a fresh SQLite connection for each operation rather than holding a persistent connection. The snapshot metadata database is tiny and accessed infrequently; a persistent connection would add lifetime complexity without measurable benefit. Revisit only if contention evidence appears.
+
 ---
 
 ## Risks
@@ -630,11 +629,11 @@ v0.1.0 is the first stable baseline, not the end of the repo's purpose. BUILD.md
 ### Active risks
 
 - Background inspection, table loading, and diff execution report coarse staged progress but do not support cooperative interruption or a user-facing cancel control
-- SQL export still builds one large in-memory payload and can materialize large tables during seeding
-- Live databases, WAL-backed databases, encrypted databases, and actively changing sources are still only best-effort
+- The GUI preview path (`export_diff_as_sql`) still collects full export into a `String`; very large migrations displayed in-UI may use significant memory even though the file-export path (`write_export`) streams
+- Live databases, WAL-backed databases, encrypted databases, and actively changing sources are handled on a best-effort basis with read-only access; concurrent writes during inspection can produce inconsistent results
 - CI is currently Linux-only even though this is a desktop app and macOS users likely matter
 - Snapshot matching depends on canonicalized paths and can behave awkwardly if files move
-- The UI is already usable, but polish work can easily outrun underlying scale and correctness work if the order slips
+- Row-level diff results are still fully materialized in memory; very large diffs with millions of changed rows could exhaust memory before export begins
 
 ### Strategic risks
 
@@ -650,10 +649,6 @@ v0.1.0 is the first stable baseline, not the end of the repo's purpose. BUILD.md
 
 | Question | Phase | Impact |
 |----------|-------|--------|
-| What exact Phase 3 evidence is enough before CLI work starts in earnest? | 3-4 | Sequencing |
-| How far should live/WAL-backed database guarantees go before docs promise more than best-effort? | 3-5 | Trust boundary |
-| Does large-export hardening require a streaming writer API or can the current shape be improved incrementally? | 3 | Architecture |
-| Should `SnapshotStore` remain simple with one connection per operation or get a persistent connection? | 3 | Complexity tradeoff |
 | Is the next release-quality support bar Cargo install only, or does the project need desktop packaging? | 5 | Distribution |
 | Should the first CLI ship human-readable output only, or stabilize JSON/JSONL immediately? | 4, 11 | Automation contract |
 | Should the plugin system use compiled Rust dynamic libraries, WASM, or both? | 9 | Architecture |
@@ -661,6 +656,7 @@ v0.1.0 is the first stable baseline, not the end of the repo's purpose. BUILD.md
 | How should migration chain state be stored? | 8 | Storage architecture |
 | Is multi-engine support worth the abstraction cost? | 12 | Product identity |
 | Should the shared snapshot registry be a separate service or embedded? | 10 | Architecture |
+| Should the GUI preview path move to streaming or lazy rendering for very large exports? | 6 | UX and memory |
 
 ---
 
@@ -668,13 +664,12 @@ v0.1.0 is the first stable baseline, not the end of the repo's purpose. BUILD.md
 
 If somebody picks this repo up for the next substantive pass, the most credible sequence is:
 
-1. **Finish one real Phase 3 hardening slice**
-   - Prefer bounded-memory export work first, unless profiling shows live/WAL correctness is the sharper trust problem.
-2. **Write the Phase 4 CLI contract before implementing all subcommands**
+1. **Write the Phase 4 CLI contract before implementing all subcommands**
    - Command names, output shape, and exit codes first.
-3. **Raise Phase 5 confidence in parallel where cheap**
+   - Start with `patchworks inspect` and `patchworks diff` as the simplest headless proof points.
+2. **Raise Phase 5 confidence in parallel where cheap**
    - macOS CI smoke path and install verification are high leverage.
-4. **Only then widen into polish or intelligence work**
+3. **Only then widen into polish or intelligence work**
    - UX work and advanced diff features should compound on a trustworthy core, not distract from it.
 
 If priorities change, replace this list with the new order rather than letting stale direction linger.
@@ -727,6 +722,12 @@ If priorities change, replace this list with the new order rather than letting s
 - 2026-03-22: Inspection and visible-table refresh now run on background worker threads coordinated from `src/app.rs` - this keeps `ui/` presentation-focused while allowing stale page-refresh results to be dropped by replacing their receivers - future responsiveness work should build on this task-handoff shape instead of reintroducing synchronous database reads in the render loop.
 - 2026-03-22: Explicit cancellation does not belong in the current background-task model yet - the app now reports staged progress and safely supersedes stale work by dropping receivers, but the detached worker threads do not have cooperative cancellation checkpoints across inspection, diff, and export - any future cancel control should wait for a cancellable job abstraction rather than bolting partial interruption onto the current fire-and-forget threads.
 - 2026-03-24: Release is the first trustworthy baseline, not the end of the roadmap - BUILD.md, AGENTS.md, and CHANGELOG.md should keep the project readable as active post-v0.1.0 work - future documentation passes must preserve real open work instead of flattening the repo into a finished artifact.
+- 2026-03-24: Large-table diffing stays single-threaded at the table level - the streaming merge is I/O-bound against SQLite reads and parallelizing across tables would add ordering and progress-reporting complexity without clear throughput gains - revisit only with profiling evidence of CPU-bound bottlenecks.
+- 2026-03-24: SnapshotStore keeps per-operation connections rather than a persistent connection - the snapshot metadata database is tiny and accessed infrequently - a persistent connection would add lifetime complexity without measurable benefit.
+
+### 2026-03-24 (Phase 3 completion)
+
+- Refactored SQL export to a streaming `Write`-based API (`write_export`) that flushes one SQL statement at a time instead of accumulating a `Vec<String>`. The existing `export_diff_as_sql` is now a thin convenience wrapper that collects to `String` for GUI preview. Added `for_each_row` to `inspector.rs` as the bounded-memory alternative to `load_all_rows` — table seeding during export no longer materializes the full table in memory. Added 6 new integration tests: WAL-mode database inspection and diffing, streaming export parity with in-memory export, file-based streaming export round-trip, large-table (5000+ rows) streaming export verification, empty database diff, and table-added-from-empty diff. Documented the live/WAL trust boundary explicitly in README.md. Made two deferred decisions explicit: single-threaded table-level diffing is sufficient (decision-0013), and SnapshotStore keeps per-operation connections (decision-0014). Verified with: `cargo build`, `cargo test` (34 tests), `cargo nextest run` (34 passed), `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo bench --no-run`, `cargo deny check`, `cargo run -- --help`. Next: Phase 4 CLI contract design and Phase 5 platform confidence.
 
 ---
 

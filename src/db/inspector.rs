@@ -207,6 +207,31 @@ pub fn load_all_rows(path: &Path, table: &TableInfo) -> Result<Vec<Vec<SqlValue>
     Ok(values)
 }
 
+/// Iterates all rows from a table, invoking a callback for each row without materializing the
+/// full result set. This is the bounded-memory alternative to [`load_all_rows`].
+pub fn for_each_row<F>(path: &Path, table: &TableInfo, mut callback: F) -> Result<()>
+where
+    F: FnMut(&[SqlValue]) -> Result<()>,
+{
+    let connection = open_read_only(path)?;
+    let sql = format!(
+        "SELECT {} FROM {}{}",
+        select_column_list(&table.columns),
+        quote_identifier(&table.name),
+        default_order_clause(table)
+    );
+    let mut statement = connection.prepare(&sql)?;
+    let mut rows = statement.query([])?;
+    let column_count = table.columns.len();
+
+    while let Some(row) = rows.next()? {
+        let values = read_value_row(row, column_count, 0)?;
+        callback(&values)?;
+    }
+
+    Ok(())
+}
+
 /// Returns the best-effort identifier columns for diffing a table.
 pub fn identity_columns(table: &TableInfo) -> Vec<String> {
     if table.primary_key.is_empty() {

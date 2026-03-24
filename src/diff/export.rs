@@ -1,15 +1,20 @@
 //! SQL export for Patchworks diffs.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::Write;
 use std::path::Path;
 
-use crate::db::inspector::{load_all_rows, quote_identifier};
+use crate::db::inspector::{for_each_row, quote_identifier};
 use crate::db::types::{
     DatabaseSummary, SchemaDiff, SchemaObjectInfo, SqlValue, TableDataDiff, TableInfo,
 };
 use crate::error::{PatchworksError, Result};
 
 /// Generates a SQL migration script that transforms the left database into the right database.
+///
+/// This is a convenience wrapper around [`write_export`] that collects the output into a `String`.
+/// For large migrations, prefer [`write_export`] with a file or buffered writer to avoid
+/// holding the entire migration in memory.
 pub fn export_diff_as_sql(
     right_path: &Path,
     left: &DatabaseSummary,
@@ -17,6 +22,32 @@ pub fn export_diff_as_sql(
     schema_diff: &SchemaDiff,
     data_diffs: &[TableDataDiff],
 ) -> Result<String> {
+    let mut buffer = Vec::new();
+    write_export(
+        &mut buffer,
+        right_path,
+        left,
+        right,
+        schema_diff,
+        data_diffs,
+    )?;
+    String::from_utf8(buffer).map_err(|error| {
+        PatchworksError::InvalidState(format!("generated SQL contained invalid UTF-8: {error}"))
+    })
+}
+
+/// Writes a SQL migration script to any [`Write`] sink, streaming one statement at a time.
+///
+/// This is the bounded-memory export path. Table seeding rows are streamed from disk rather than
+/// materialized into a full in-memory collection, and each SQL statement is flushed individually.
+pub fn write_export<W: Write>(
+    writer: &mut W,
+    right_path: &Path,
+    left: &DatabaseSummary,
+    right: &DatabaseSummary,
+    schema_diff: &SchemaDiff,
+    data_diffs: &[TableDataDiff],
+) -> Result<()> {
     let left_tables = left
         .tables
         .iter()
@@ -39,38 +70,40 @@ pub fn export_diff_as_sql(
         .union(&object_changed_tables)
         .cloned()
         .collect::<BTreeSet<_>>();
-    let mut sql = Vec::new();
 
-    sql.push("PRAGMA foreign_keys=OFF;".to_owned());
-    sql.push("BEGIN TRANSACTION;".to_owned());
+    writeln!(writer, "PRAGMA foreign_keys=OFF;")?;
+    writeln!(writer, "BEGIN TRANSACTION;")?;
 
     for trigger in &left.triggers {
         if trigger_reset_tables.contains(&trigger.table_name) {
-            sql.push(format!(
+            writeln!(
+                writer,
                 "DROP TRIGGER IF EXISTS {};",
                 quote_identifier(&trigger.name)
-            ));
+            )?;
         }
     }
 
     for index in &left.indexes {
         if index_reset_tables.contains(&index.table_name) {
-            sql.push(format!(
+            writeln!(
+                writer,
                 "DROP INDEX IF EXISTS {};",
                 quote_identifier(&index.name)
-            ));
+            )?;
         }
     }
 
     for table in &schema_diff.removed_tables {
-        sql.push(format!(
+        writeln!(
+            writer,
             "DROP TABLE IF EXISTS {};",
             quote_identifier(&table.name)
-        ));
+        )?;
     }
 
     for table in &schema_diff.added_tables {
-        append_create_and_seed(right_path, table, &table.name, &mut sql)?;
+        stream_create_and_seed(writer, right_path, table, &table.name)?;
     }
 
     for table_diff in &schema_diff.modified_tables {
@@ -81,16 +114,18 @@ pub fn export_diff_as_sql(
             ))
         })?;
         let replacement_name = format!("__patchworks_new_{}", right_table.name);
-        append_create_and_seed(right_path, right_table, &replacement_name, &mut sql)?;
-        sql.push(format!(
+        stream_create_and_seed(writer, right_path, right_table, &replacement_name)?;
+        writeln!(
+            writer,
             "DROP TABLE {};",
             quote_identifier(&right_table.name)
-        ));
-        sql.push(format!(
+        )?;
+        writeln!(
+            writer,
             "ALTER TABLE {} RENAME TO {};",
             quote_identifier(&replacement_name),
             quote_identifier(&right_table.name)
-        ));
+        )?;
     }
 
     for table_name in &schema_diff.unchanged_tables {
@@ -101,25 +136,25 @@ pub fn export_diff_as_sql(
             .iter()
             .find(|diff| diff.table_name == *table_name)
         {
-            append_incremental_changes(table, data_diff, &mut sql)?;
+            write_incremental_changes(writer, table, data_diff)?;
         }
     }
 
     for index in &right.indexes {
         if index_reset_tables.contains(&index.table_name) {
-            sql.push(schema_object_create_sql(index, "index")?);
+            writeln!(writer, "{}", schema_object_create_sql(index, "index")?)?;
         }
     }
 
     for trigger in &right.triggers {
         if trigger_reset_tables.contains(&trigger.table_name) {
-            sql.push(schema_object_create_sql(trigger, "trigger")?);
+            writeln!(writer, "{}", schema_object_create_sql(trigger, "trigger")?)?;
         }
     }
 
-    sql.push("COMMIT;".to_owned());
-    sql.push("PRAGMA foreign_keys=ON;".to_owned());
-    Ok(sql.join("\n"))
+    writeln!(writer, "COMMIT;")?;
+    write!(writer, "PRAGMA foreign_keys=ON;")?;
+    Ok(())
 }
 
 fn rebuilt_table_names(schema_diff: &SchemaDiff) -> BTreeSet<String> {
@@ -192,33 +227,40 @@ fn schema_object_changed_table_names(schema_diff: &SchemaDiff) -> BTreeSet<Strin
         .collect()
 }
 
-fn append_create_and_seed(
+/// Streams CREATE TABLE plus INSERT statements for a table, one row at a time.
+fn stream_create_and_seed<W: Write>(
+    writer: &mut W,
     path: &Path,
     table: &TableInfo,
     target_name: &str,
-    sql: &mut Vec<String>,
 ) -> Result<()> {
-    sql.push(create_table_sql_for_name(table, target_name)?);
-    for row in load_all_rows(path, table)? {
-        sql.push(format!(
+    writeln!(writer, "{}", create_table_sql_for_name(table, target_name)?)?;
+    let column_list = table
+        .columns
+        .iter()
+        .map(|column| quote_identifier(&column.name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let target_quoted = quote_identifier(target_name);
+
+    for_each_row(path, table, |row| {
+        writeln!(
+            writer,
             "INSERT INTO {} ({}) VALUES ({});",
-            quote_identifier(target_name),
-            table
-                .columns
-                .iter()
-                .map(|column| quote_identifier(&column.name))
-                .collect::<Vec<_>>()
-                .join(", "),
+            target_quoted,
+            column_list,
             row.iter().map(sql_literal).collect::<Vec<_>>().join(", ")
-        ));
-    }
+        )?;
+        Ok(())
+    })?;
+
     Ok(())
 }
 
-fn append_incremental_changes(
+fn write_incremental_changes<W: Write>(
+    writer: &mut W,
     table: &TableInfo,
     data_diff: &TableDataDiff,
-    sql: &mut Vec<String>,
 ) -> Result<()> {
     let primary_key = export_identity_columns(table)?;
 
@@ -228,15 +270,17 @@ fn append_incremental_changes(
         } else {
             row
         };
-        sql.push(format!(
+        writeln!(
+            writer,
             "DELETE FROM {} WHERE {};",
             quote_identifier(&table.name),
             where_clause(&table.name, &data_diff.columns, key, &primary_key)?
-        ));
+        )?;
     }
 
     for row in &data_diff.added_rows {
-        sql.push(format!(
+        writeln!(
+            writer,
             "INSERT INTO {} ({}) VALUES ({});",
             quote_identifier(&table.name),
             data_diff
@@ -246,7 +290,7 @@ fn append_incremental_changes(
                 .collect::<Vec<_>>()
                 .join(", "),
             row.iter().map(sql_literal).collect::<Vec<_>>().join(", ")
-        ));
+        )?;
     }
 
     for row in &data_diff.modified_rows {
@@ -274,12 +318,13 @@ fn append_incremental_changes(
                 .collect::<Vec<_>>()
                 .join(" AND ")
         };
-        sql.push(format!(
+        writeln!(
+            writer,
             "UPDATE {} SET {} WHERE {};",
             quote_identifier(&table.name),
             set_clause,
             where_clause
-        ));
+        )?;
     }
 
     Ok(())

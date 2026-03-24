@@ -108,8 +108,7 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for deep technical details.
 - **GUI-first.** No headless CLI for inspect/diff/export yet.
 - **Views are inspect-only.** They are not diffed or exported.
 - **No explicit cancel.** Long-running jobs show progress but can only be superseded, not interrupted.
-- **Large exports are memory-resident.** Very large migrations materialize significant data in memory.
-- **Best-effort on live databases.** Stable files give the best results; WAL-backed or actively changing databases are handled but not guaranteed.
+- **Best-effort on live databases.** Stable files give the best results; WAL-backed or actively changing databases are handled on a best-effort basis. The tool opens databases in read-only mode and will read from WAL-mode databases, but concurrent writes by other processes during inspection or diff can produce inconsistent snapshots. For reliable results, operate on quiescent database files or use the snapshot feature to capture a stable copy first.
 
 ## Design principles
 
