@@ -56,13 +56,13 @@ cargo deny check
 cargo run -- --help
 ```
 
-## Current State (2026-03-22)
+## Current State (2026-03-24)
 
-**Released and frozen (v0.1.0).** Phases 0-3 complete. All quality gates pass.
+**Released (v0.1.0) and still active.** Phases 0-2 are shipped, Phase 3 hardening remains the live lane, and Phases 4-5 are the next credible build steps.
 
 What works: inspect, browse, diff (schema + rows), snapshots, SQL export with FK safety and trigger preservation, background processing with progress.
 
-Known limits: no headless CLI, views are inspect-only, no explicit cancel, large exports are memory-resident, best-effort on live/WAL databases.
+Known limits: no headless CLI yet, views are inspect-only, no explicit cancel, large exports are still memory-heavy, best-effort on live/WAL databases.
 
 ## Known Caveats
 

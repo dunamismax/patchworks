@@ -4,7 +4,9 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 
 ## [Unreleased]
 
-No changes since release freeze.
+### Changed
+- Reframed `BUILD.md` as an active post-release execution manual instead of a closed-out project memo
+- Aligned `AGENTS.md` with the active roadmap posture after v0.1.0
 
 ## [0.1.0-post] - 2026-03-22
 
@@ -24,7 +26,7 @@ No changes since release freeze.
 - SQL export now rebuilds schema-changed tables via temporary replacement for FK safety
 - Row diff no longer assumes `rowid` exists when shared primary keys diverge
 - README.md updated to release quality
-- BUILD.md marked as released and frozen
+- BUILD.md aligned to the v0.1.0 release-baseline framing
 - All quality gates verified passing
 
 ## [0.1.0] - 2026-03-21

@@ -1,21 +1,22 @@
 # BUILD.md
 
-## Status: Released and Frozen
+## Status: Released, Active, Post-v0.1.0
 
-**Patchworks v0.1.0 is released.** The desktop app ships inspection, diffing, snapshots, and SQL export. The codebase is clean, tested, and passing all quality gates. This repo is frozen — no new feature work unless explicitly resumed.
+**Patchworks v0.1.0 is released, and the project is still active.** The desktop app already ships inspection, diffing, snapshots, and SQL export. The next job is to extend that trustworthy core deliberately: harden scale-sensitive paths, define the headless automation surface, and raise platform confidence without pretending unfinished work is done.
 
 ## Purpose
 
 This file is the execution manual for `patchworks`.
 
-It records what was built, what decisions were made, and what the known limits are. At any point it should answer:
+It should answer, at a glance:
 
-- what patchworks does
-- what exists right now
-- what is explicitly not built
-- what was decided and why
+- what patchworks does right now
+- what is shipped and verified
+- what is actively being hardened next
+- what is planned but not yet built
+- what decisions, risks, and open questions shape the repo
 
-This is a reference document for a frozen project. When code and docs disagree, fix them together in the same change.
+This is not a release tombstone. It is the working plan for a shipped product that still has room to grow. When code and docs disagree, fix them together in the same change.
 
 ---
 
@@ -28,17 +29,30 @@ Patchworks exists because there is no trustworthy, purpose-built tool for unders
 ### Long-term vision
 
 1. **Today**: A desktop app that inspects, diffs, snapshots, and exports SQL migrations between SQLite databases.
-2. **Near-term**: A headless CLI that makes the same engine scriptable for automation, CI pipelines, and pre-commit hooks.
-3. **Mid-term**: An intelligent diff engine with semantic understanding, migration chain management, and conflict resolution.
-4. **Long-term**: A plugin-extensible platform with team collaboration features, shared snapshot registries, and deep CI/CD integration.
+2. **Next**: A headless CLI that makes the same engine scriptable for automation, CI pipelines, and pre-commit hooks.
+3. **After that**: A more intelligent diff and migration engine with stronger semantic understanding, validation, and conflict handling.
+4. **Long-term**: A plugin-extensible platform with optional team workflows, shared snapshot registries, and deeper CI/CD integration.
 
-The through-line: SQLite-specific correctness first. Every feature earns its place by being trustworthy before being powerful.
+The through-line is unchanged: SQLite-specific correctness first. Every new feature earns its place by being trustworthy before being powerful.
+
+---
+
+## Current operating posture
+
+Patchworks is in the healthy middle state between prototype and finished platform.
+
+- **Shipped baseline:** v0.1.0 exists on crates.io and is already useful as a native desktop SQLite inspection and comparison tool.
+- **Active lane:** finish the hardening work that release exposed, especially around large exports, live/WAL database behavior, and CLI shaping.
+- **Near-term expansion:** introduce a real headless surface without splitting the truth layer between GUI code and CLI code.
+- **Discipline:** roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
+
+If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
 
 ---
 
 ## Repo snapshot
 
-**Status: Released and frozen (v0.1.0)**
+**Status: Released (v0.1.0), active roadmap continuing**
 
 **Package:** crates.io [`patchworks`](https://crates.io/crates/patchworks) (`0.1.0`)
 **Primary surface:** native Rust desktop app via `egui`/`eframe`
@@ -50,20 +64,20 @@ What exists:
 - Computes schema diffs and row diffs between two databases
 - Saves snapshots into a local Patchworks store under `~/.patchworks/`
 - Compares a live database against a saved snapshot
-- Generates SQL export that transforms left database into right database
+- Generates SQL export that transforms the left database into the right database
 - Preserves tracked indexes and triggers in generated SQL
-- Guards `PRAGMA foreign_keys` and uses temporary-table rebuild for schema-changed tables
+- Guards `PRAGMA foreign_keys` and uses temporary-table rebuilds for schema-changed tables
 - Runs inspection, table loading, and diffing on background threads with staged progress
-- Small CLI surface for app launch plus `--snapshot <db>`
+- Ships a small CLI surface for app launch plus `--snapshot <db>`
 
 What does **not** exist yet:
 
 - Headless CLI commands for inspect, diff, SQL export, snapshot listing, or snapshot cleanup
-- View diffing or export (views are inspect-only)
+- View diffing or export support
 - Explicit cancel control for long-running background jobs
-- Streaming export for very large migrations (some operations still materialize significant data in memory)
-- Installer or release automation beyond Cargo packaging
-- Guarantees for heavily changing live databases (still best-effort)
+- Bounded-memory guarantees for very large SQL exports
+- Formal desktop packaging or installer automation beyond Cargo packaging
+- Strong guarantees for heavily changing live databases, WAL-backed files, or other edge-heavy runtime conditions
 
 ### Recorded verification baseline
 
@@ -71,7 +85,9 @@ What does **not** exist yet:
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
 - Host: macOS arm64 (`Darwin 25.4.0`)
-- Release verification: all quality gates pass (build, test, clippy, fmt, bench-compile, deny)
+- Release verification: build, test, clippy, fmt, bench-compile, deny, and CLI help were recorded passing
+
+This baseline is still useful, but it is not permission to stop verifying. Any later change that touches product behavior should record its own narrower proof.
 
 ---
 
@@ -84,7 +100,7 @@ What does **not** exist yet:
 | `AGENTS.md` | Agent-facing architecture memo |
 | `ARCHITECTURE.md` | Deep architectural documentation |
 | `CONTRIBUTING.md` | Setup, conventions, how to contribute |
-| `CHANGELOG.md` | Release history |
+| `CHANGELOG.md` | Release history and unreleased doc/product deltas |
 | `Cargo.toml` | Package manifest, dependency graph, crate publishing posture |
 | `deny.toml` | Dependency policy |
 | `.github/workflows/ci.yml` | CI entrypoint |
@@ -112,16 +128,17 @@ What does **not** exist yet:
 
 ## Working rules
 
-1. **Read BUILD.md, README.md, and AGENTS.md** before making substantial changes.
+1. **Read `BUILD.md`, `README.md`, and `AGENTS.md`** before making substantial changes.
 2. **Keep the layering honest.** `ui/` renders and handles interaction. `state/` stores UI-facing state. `db/` and `diff/` own data inspection, comparison, snapshots, and export logic. `main.rs` stays thin.
 3. **Do not claim flows are verified** unless they were actually exercised and recorded.
-4. **When behavior changes** around snapshots, SQL export, diff correctness, or live-database handling, update this file in the same pass.
+4. **When behavior changes** around snapshots, SQL export, diff correctness, performance limits, or live-database handling, update this file in the same pass.
 5. **Prefer streaming and bounded-memory approaches** when touching inspection, diff, or export hot paths.
-6. **Keep README.md aligned with recorded reality.** Do not market future work as present capability.
+6. **Keep `README.md` aligned with recorded reality.** Do not market future work as present capability.
 7. **If a task changes user-visible behavior or repo workflow,** add a progress-log entry and, when appropriate, a decision-log entry.
-8. **If new work reveals an architectural or product ambiguity,** record it under open decisions instead of leaving it implicit.
+8. **If new work reveals an architectural or product ambiguity,** record it under open questions or decisions instead of leaving it implicit.
 9. **Correctness over cleverness.** A heavier migration that is semantically correct beats a minimal one that breaks edge cases.
-10. **SQLite-native.** Preserve the nuance of SQLite (rowid, WITHOUT ROWID, WAL, PRAGMA behavior) instead of flattening into generic database abstractions.
+10. **SQLite-native.** Preserve the nuance of SQLite (`rowid`, `WITHOUT ROWID`, WAL, PRAGMA behavior) instead of flattening into generic database abstractions.
+11. **Release is a baseline, not a finish line.** Do not write docs as if v0.1.0 exhausted the product's purpose.
 
 ---
 
@@ -133,15 +150,15 @@ Use this language consistently in docs, commits, and issues:
 |------|---------|
 | **done** | Implemented and verified |
 | **checked** | Verified by command or test output |
-| **in progress** | Actively being worked on |
-| **not started** | Intentional, not started |
+| **in progress** | Actively being worked on or still the current lane |
+| **queued** | Intentionally next, but not started in code yet |
+| **planned** | Real roadmap work, not yet queued for the next pass |
+| **exploratory** | Worth investigating, but still needs sharper scope or decisions |
 | **blocked** | Cannot proceed without a decision or dependency |
 | **risk** | Plausible failure mode that could distort the design |
 | **decision** | A durable call with consequences |
 
-Checkboxes mean landed work, not intention. The progress log is append-only. Preserve historical verification context instead of rewriting it into a cleaner fiction.
-
-When new work lands, update: repo snapshot, phase dashboard, decisions (if architecture changed), and progress log with date and what was verified.
+Checkboxes describe landing state. Unchecked work should be specific enough to build, not vague aspiration. The progress log is append-first: preserve verification context, then update the current-state sections so the plan stays usable.
 
 ### Progress log format
 
@@ -150,6 +167,45 @@ When new work lands, update: repo snapshot, phase dashboard, decisions (if archi
 ### Decision log format
 
 - `YYYY-MM-DD: decision - rationale - consequence.`
+
+---
+
+## Current priority stack
+
+### Priority 1 — Finish the Phase 3 hardening story
+
+Release proved the product is real. It did **not** prove the remaining scale-sensitive edges are solved.
+
+Still-open hardening work:
+
+- Bound SQL export memory use for large migrations
+- Reduce or eliminate full-table materialization during export seeding where practical
+- Tighten the trust boundary for live and WAL-backed databases with sharper tests and clearer docs
+- Revisit snapshot-store connection strategy only if profiling or contention evidence says it matters
+
+### Priority 2 — Define the Phase 4 CLI without forking the backend
+
+Patchworks needs a headless surface, but the CLI must reuse the same truth layer as the desktop app.
+
+The next meaningful CLI work is not just wiring `clap`; it is deciding:
+
+- subcommand layout
+- output contract
+- exit codes
+- which commands are worth stabilizing first
+- what verification and fixtures prove CLI/GUI parity
+
+### Priority 3 — Raise platform confidence for the next release-quality bar
+
+The product is desktop-shaped. Linux-only CI and unrecorded install verification are still a gap.
+
+Near-term release-confidence work:
+
+- re-verify install paths and record the result
+- add a macOS CI build smoke path
+- decide whether Cargo install alone is enough or whether desktop packaging belongs in the next release band
+
+If a code pass does not obviously move one of these priorities, it should say why.
 
 ---
 
@@ -235,16 +291,18 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 | 0 | Repo baseline, workflow, and packaging truth | **Done** |
 | 1 | Desktop inspection, diff, snapshot, and export MVP | **Done** |
 | 2 | Schema-object fidelity and quality rails | **Done** |
-| 3 | Responsiveness and large-database hardening | **Done** (core goals met; remaining items deferred) |
-| 4 | Headless CLI and automation surface | Deferred |
-| 5 | Packaging, platform confidence, and release discipline | Deferred |
-| 6 | Product polish and UX refinement | Deferred |
-| 7 | Advanced diff intelligence | Deferred |
-| 8 | Migration workflow management | Deferred |
-| 9 | Plugin and extension architecture | Deferred |
-| 10 | Team features and shared snapshot registries | Deferred |
-| 11 | CI/CD integration and automation ecosystem | Deferred |
-| 12 | Long-term platform evolution | Deferred |
+| 3 | Responsiveness and large-database hardening | **In progress** |
+| 4 | Headless CLI and automation surface | **Queued** |
+| 5 | Packaging, platform confidence, and release discipline | **Queued** |
+| 6 | Product polish and UX refinement | **Planned** |
+| 7 | Advanced diff intelligence | **Planned** |
+| 8 | Migration workflow management | **Planned** |
+| 9 | Plugin and extension architecture | **Exploratory** |
+| 10 | Team features and shared snapshot registries | **Exploratory** |
+| 11 | CI/CD integration and automation ecosystem | **Planned** |
+| 12 | Long-term platform evolution | **Exploratory** |
+
+Phases 0-2 are the shipped foundation. Phase 3 is still the active hardening lane. Phases 4-5 are the next likely build steps once the remaining hard edges are better bounded.
 
 ---
 
@@ -260,7 +318,7 @@ Goals:
 
 Exit criteria:
 - [x] A contributor can see the real package/workflow surface from the root docs
-- [x] `cargo package --allow-dirty` is recorded as successful in the repo history
+- [x] `cargo package --allow-dirty` is a recorded success path in repo history
 
 ---
 
@@ -278,7 +336,7 @@ Goals:
 
 Exit criteria:
 - [x] Patchworks is useful as a desktop inspection and comparison tool for normal local workflows
-- [x] Snapshot creation and SQL export are part of the actual product, not just planned scope
+- [x] Snapshot creation and SQL export are part of the real product, not just planned scope
 
 ---
 
@@ -302,21 +360,27 @@ Exit criteria:
 ---
 
 ### Phase 3 — Responsiveness and large-database hardening
-**Status: done** (core goals met; remaining stretch items deferred to future work if resumed)
+**Status: in progress**
 
-Goals:
+Shipped already:
 - [x] Move database inspection off the UI thread
 - [x] Move table-page refresh work off the UI thread or otherwise bound its impact on interactivity
 - [x] Add progress reporting for long-running background inspection, table-load, and diff jobs
 - [x] Decide whether explicit diff cancellation belongs in the current architecture
 
-Deferred (not blocking release):
-- Refactor SQL export away from one giant in-memory `String` for very large migrations
-- Reduce or eliminate full-table materialization during export seeding where practical
-- Add regression coverage for large databases and live or WAL-backed cases
-- Decide whether `SnapshotStore` should reuse a persistent SQLite connection
+Still open:
+- [ ] Refactor SQL export away from one giant in-memory `String` for very large migrations
+- [ ] Reduce or eliminate full-table materialization during export seeding where practical
+- [ ] Add regression coverage and explicit operational guidance for live, WAL-backed, and heavily changing databases
+- [ ] Decide whether large-table diffing needs table-level parallelism or whether profiling still favors the current single-threaded order
+- [ ] Revisit whether `SnapshotStore` should reuse a persistent SQLite connection only if profiling proves it matters
 
-Known limits documented in README:
+Exit criteria:
+- [ ] Export generation has a bounded-memory story for large migrations, or the documented limits are precise enough to be trusted
+- [ ] The trust boundary for live/WAL-backed databases is explicit in both tests and docs
+- [ ] Remaining performance tradeoffs are conscious decisions, not accidental leftovers from the MVP
+
+Known limits carried by this phase:
 - SQL export still builds one large in-memory payload and can materialize large tables during seeding
 - Live databases, WAL-backed databases, and actively changing sources are still only best-effort
 - Background workers do not yet support cooperative interruption or user-facing cancel
@@ -324,179 +388,176 @@ Known limits documented in README:
 ---
 
 ### Phase 4 — Headless CLI and automation surface
-**Status: not started**
+**Status: queued**
 
 Goals:
+- [ ] Design the command shape for `patchworks inspect`, `patchworks diff`, `patchworks export`, and `patchworks snapshot ...`
 - [ ] Add a headless inspect command
 - [ ] Add a headless diff command
 - [ ] Add a headless SQL export command
 - [ ] Add snapshot listing and cleanup commands
-- [ ] Decide whether machine-readable output formats belong in the first CLI expansion
+- [ ] Decide which machine-readable output formats belong in the first CLI expansion
+- [ ] Define and document exit code conventions early instead of retrofitting them later
 - [ ] Keep the CLI on the same backend logic rather than forking separate comparison code
+- [ ] Add CLI-focused fixtures or golden-output checks that prove parity with the GUI-backed truth layer
 
 Exit criteria:
 - [ ] Patchworks can participate in scripted workflows, not only interactive desktop sessions
-- [ ] CLI and GUI paths share the same truth layer for diff and export behavior
+- [ ] CLI and GUI paths share the same diff and export truth layer
+- [ ] The first CLI contract is small enough to support, but real enough to build automation on top of
 
 Risks:
-- **risk:** CLI and GUI diverging on diff behavior if backend is forked rather than shared
+- **risk:** CLI and GUI diverging on diff behavior if backend logic is forked
+- **risk:** locking in output or exit-code conventions too late makes automation harder to trust
 
 ---
 
 ### Phase 5 — Packaging, platform confidence, and release discipline
-**Status: not started**
+**Status: queued**
 
 Goals:
-- [ ] Re-verify `cargo install --path .` or `cargo install patchworks` explicitly and record the result
+- [ ] Re-verify `cargo install --path .` and/or `cargo install patchworks` explicitly and record the result
 - [ ] Add at least one macOS CI build smoke path in addition to Linux
 - [ ] Decide whether the project needs release archives, installers, or desktop packaging beyond Cargo install
 - [ ] Tighten README and BUILD guidance around live databases, WAL mode, and other operational caveats
-- [ ] Decide what counts as the first release-quality support bar
+- [ ] Define what the next release-quality support bar actually is (`0.1.x` polish vs `0.2.0` scope)
+- [ ] Decide whether platform-specific smoke tests need minimal fixture databases for launch-and-open scenarios
 
 Exit criteria:
 - [ ] Installation expectations are documented from actual verification, not assumption
 - [ ] CI covers the platforms most likely to matter for a desktop SQLite tool
+- [ ] The project can describe its release posture without hand-waving
 
 ---
 
 ### Phase 6 — Product polish and UX refinement
-**Status: not started**
+**Status: planned**
 
 Goals:
-- [ ] Decide whether views should stay inspect-only or gain diff or export support
+- [ ] Decide whether views should stay inspect-only or gain diff/export support
 - [ ] Decide whether indexes and triggers need dedicated UI panels instead of export-only preservation
-- [ ] Add a dedicated schema browser panel (tree view of tables, views, indexes, triggers with DDL preview)
-- [ ] Add search/filter across table names, column names, and row data
-- [ ] Refine the diff UX: syntax-highlighted SQL, collapsible sections, jump-to-change navigation
+- [ ] Add a dedicated schema browser panel (tables, views, indexes, triggers with DDL preview)
+- [ ] Add search and filter across table names, column names, and row data
+- [ ] Refine diff UX: syntax-highlighted SQL, collapsible sections, jump-to-change navigation
 - [ ] Add keyboard shortcuts for core workflows (open file, switch panes, trigger diff, copy export)
-- [ ] Add a theme system (light/dark at minimum; respect system preference)
-- [ ] Add a recent-files list or workspace memory so users can quickly reopen previous sessions
-- [ ] Reassess whether the current CLI surface and GUI affordances match the product's real audience
-- [ ] Add user-facing error recovery: clear error states, retry affordances, diagnostic info on failure
+- [ ] Add theme support (light/dark at minimum; respect system preference)
+- [ ] Add recent-files or workspace memory so users can quickly reopen previous sessions
+- [ ] Add clearer error recovery: retry affordances, diagnostic detail, and user-facing failure states
 
 Exit criteria:
-- [ ] The app feels like a polished tool, not a prototype
-- [ ] Any scope expansion is deliberate and documented rather than accidental drift
-- [ ] Product polish work follows proven correctness and performance improvements instead of masking unfinished core behavior
+- [ ] The app feels like a durable tool, not just a technically correct prototype
+- [ ] UX scope follows proven correctness and performance improvements instead of papering over unfinished core behavior
 
 ---
 
 ### Phase 7 — Advanced diff intelligence
-**Status: not started**
+**Status: planned**
 
 Goals:
-- [ ] Add column-level change highlighting within modified rows (cell-level diff, not just row-level)
-- [ ] Add diff filtering: show only additions, only deletions, only modifications, or filter by table
-- [ ] Add diff statistics dashboard: summary counts, change heatmap by table, largest deltas
-- [ ] Add semantic diff awareness: detect column renames (vs. drop+add), table renames, and column type changes that preserve data
-- [ ] Add conflict detection: identify rows modified in both databases relative to a common ancestor snapshot
-- [ ] Add three-way merge support: given a base snapshot and two diverged databases, identify conflicts and produce a merged migration
-- [ ] Add diff annotations: let users mark changes as "expected", "investigate", or "reject" for triage workflows
-- [ ] Add data-type-aware comparison: understand that `INTEGER` vs `INT` is cosmetic, `TEXT` vs `BLOB` is semantic
+- [ ] Add column-level change highlighting within modified rows
+- [ ] Add diff filtering by change type and by table
+- [ ] Add diff statistics and summary views
+- [ ] Add semantic diff awareness for table renames, column renames, and compatible type shifts where defensible
+- [ ] Add conflict detection for two databases compared against a common ancestor snapshot
+- [ ] Add three-way merge support with explicit conflict surfacing
+- [ ] Add diff annotations for triage workflows
+- [ ] Add data-type-aware comparison rules that distinguish cosmetic differences from semantic ones
 
 Exit criteria:
 - [ ] Patchworks provides actionable intelligence about changes, not just raw deltas
-- [ ] Three-way merge works correctly for non-conflicting changes and clearly surfaces conflicts for manual resolution
+- [ ] Three-way merge works correctly for non-conflicting cases and clearly exposes conflicts when manual judgment is required
 
 ---
 
 ### Phase 8 — Migration workflow management
-**Status: not started**
+**Status: planned**
 
 Goals:
 - [ ] Add migration chain support: generate, store, and replay ordered migration sequences
-- [ ] Add migration validation: dry-run a generated migration against a copy of the source database and verify the result matches the target
-- [ ] Add migration rollback generation: produce a reverse migration alongside the forward migration
-- [ ] Add migration squashing: combine multiple sequential migrations into a single equivalent migration
-- [ ] Add migration history tracking: store which migrations have been applied to which databases (tracked in the Patchworks store)
-- [ ] Add migration conflict detection: warn when two migrations target the same table or when ordering matters
-- [ ] Add a `patchworks migrate` CLI command that applies a migration file to a database with safety checks
-- [ ] Add `--dry-run` mode for all migration operations
-- [ ] Add migration templates: let users define custom pre/post migration hooks
+- [ ] Add migration validation by applying generated SQL to a copy and verifying the result matches the target
+- [ ] Add rollback generation for reversible migrations where possible
+- [ ] Add migration squashing for sequential migrations
+- [ ] Add migration history tracking in the Patchworks store
+- [ ] Add migration conflict detection when multiple migrations target the same objects
+- [ ] Add a `patchworks migrate` CLI command with safety checks
+- [ ] Add `--dry-run` mode for migration operations
+- [ ] Decide whether custom pre/post migration hooks belong in core or later extensions
 
 Exit criteria:
-- [ ] Users can manage a sequence of database migrations through Patchworks rather than ad-hoc SQL files
-- [ ] Every migration can be validated before application and rolled back after
-- [ ] Migration state is tracked persistently, not just in-memory
+- [ ] Users can manage ordered database migrations through Patchworks rather than ad-hoc SQL files alone
+- [ ] Migrations can be validated before application and tracked after application
 
 ---
 
 ### Phase 9 — Plugin and extension architecture
-**Status: not started**
+**Status: exploratory**
 
 Goals:
-- [ ] Design and implement a plugin trait/interface for custom diff formatters (HTML, Markdown, JSON)
-- [ ] Design and implement a plugin trait for custom export targets (Alembic, Flyway, Liquibase)
-- [ ] Design and implement a plugin trait for custom inspectors (application-specific table semantics, data validation rules)
-- [ ] Add a plugin discovery and loading mechanism
-- [ ] Add built-in reference plugins (JSON, HTML, Markdown)
-- [ ] Define plugin API stability guarantees and versioning
-- [ ] Add plugin documentation and development guide
+- [ ] Design a plugin surface for alternate diff formatters (HTML, Markdown, JSON)
+- [ ] Design a plugin surface for export targets (Alembic, Flyway, Liquibase)
+- [ ] Design a plugin surface for custom inspectors or app-specific validation rules
+- [ ] Evaluate discovery and loading mechanisms
+- [ ] Add built-in reference plugins only after the core API shape is stable enough to deserve them
+- [ ] Define plugin API stability and versioning expectations
+- [ ] Add plugin author documentation only after the extension contract stops moving weekly
 
 Exit criteria:
-- [ ] Third-party developers can extend Patchworks output formats and inspection logic without forking
-- [ ] The plugin API has a stability contract and documentation
-- [ ] At least three built-in plugins demonstrate the architecture
+- [ ] Third-party developers can extend Patchworks without forking
+- [ ] The extension surface has a stability story instead of accidental API leakage
 
 ---
 
 ### Phase 10 — Team features and shared snapshot registries
-**Status: not started**
+**Status: exploratory**
 
 Goals:
-- [ ] Design a snapshot registry protocol: push/pull snapshots to/from a shared store
-- [ ] Add `patchworks push` and `patchworks pull` commands for snapshot exchange
+- [ ] Design a snapshot registry protocol for optional push/pull workflows
 - [ ] Add snapshot naming, tagging, and annotation
 - [ ] Add snapshot comparison across machines
-- [ ] Add snapshot retention policies
-- [ ] Add snapshot integrity verification
-- [ ] Add access control primitives for shared registries
+- [ ] Add snapshot retention policies and integrity verification
+- [ ] Add access-control primitives if remote/shared registries become real
+- [ ] Keep local-only workflows first-class instead of turning shared state into a requirement
 
 Exit criteria:
-- [ ] A team of developers can share database snapshots through a common registry
-- [ ] Snapshot integrity is verifiable end-to-end
-- [ ] The shared registry is optional — Patchworks remains fully functional as a local-only tool
+- [ ] Teams can share snapshots through an optional registry without breaking the local-first model
+- [ ] Registry integrity and trust boundaries are explicit
 
 ---
 
 ### Phase 11 — CI/CD integration and automation ecosystem
-**Status: not started**
+**Status: planned**
 
 Goals:
-- [ ] Add a `patchworks check` command for CI gates (exit 0 if identical, exit 1 if different)
-- [ ] Add GitHub Actions integration
+- [ ] Add a `patchworks check` command for CI gates
+- [ ] Add GitHub Actions integration examples using the future headless CLI
 - [ ] Add pre-commit hook support
-- [ ] Add machine-readable output formats (JSON, JSONL) across all CLI commands
-- [ ] Add `--format` flag across all CLI commands (human, json, jsonl)
+- [ ] Add machine-readable output formats across CLI commands
+- [ ] Add a `--format` flag with stable human/json/jsonl behavior where appropriate
 - [ ] Stabilize and document exit code conventions
-- [ ] Add `patchworks watch` mode
-- [ ] Add webhook/notification support
-- [ ] Add GitOps workflow documentation
+- [ ] Evaluate `patchworks watch` mode for file-change monitoring
+- [ ] Add GitOps workflow documentation after the CLI contract exists
 
 Exit criteria:
-- [ ] Patchworks can be dropped into a CI pipeline with a single `patchworks check` command
-- [ ] Machine-readable output is stable and documented
-- [ ] At least one real GitHub Actions workflow demonstrates the integration
+- [ ] Patchworks can be dropped into CI with a small, documented command surface
+- [ ] Machine-readable output and exit codes are stable enough for automation to depend on
 
 ---
 
 ### Phase 12 — Long-term platform evolution
-**Status: not started**
+**Status: exploratory**
 
 Goals:
-- [ ] Evaluate multi-engine support (DuckDB, libSQL, other embedded databases)
+- [ ] Evaluate multi-engine support (DuckDB, libSQL, or other embedded databases) without sacrificing SQLite-first correctness
 - [ ] Evaluate embedded scripting (Lua, Rhai, WASM)
 - [ ] Evaluate a TUI mode as a middle ground between GUI and CLI
 - [ ] Evaluate remote database support (SSH, HTTP, cloud storage)
-- [ ] Evaluate real-time collaboration
-- [ ] Evaluate database schema visualization (ERD generation)
-- [ ] Evaluate integration with existing migration frameworks (Diesel, SQLx, Alembic, Flyway)
-- [ ] Evaluate performance profiling integration
+- [ ] Evaluate schema visualization and ERD generation
+- [ ] Evaluate integration with existing migration frameworks
+- [ ] Evaluate performance profiling integration as part of normal developer workflow
 
 Exit criteria:
-- [ ] Each evaluation produces a decision document (build, defer, or reject) with rationale
-- [ ] Any accepted capability follows the same phase-gated development discipline
-- [ ] Platform evolution does not compromise SQLite-first correctness
+- [ ] Each exploration produces a build, defer, or reject decision with rationale
+- [ ] Any accepted capability follows the same phase-gated discipline as the shipped desktop core
 
 ---
 
@@ -507,7 +568,7 @@ Exit criteria:
 
 The shipped product is the desktop app with a small snapshot CLI surface. Headless automation work stays explicit future scope instead of implied capability.
 
-### decision-0002: Snapshot state under ~/.patchworks/
+### decision-0002: Snapshot state under `~/.patchworks/`
 **Date:** 2026-03-20
 
 Snapshot metadata and copied database files live under `~/.patchworks/`. This keeps user-local state outside the repo. Snapshot behavior is local machine state, not project state.
@@ -527,7 +588,7 @@ This keeps the current scope focused on table-centered diffing and export. Any v
 
 Sorted pagination appends a primary-key or `rowid` tie-breaker to preserve deterministic page boundaries across duplicate sort values.
 
-### decision-0006: Indexes and triggers tracked from sqlite_master
+### decision-0006: Indexes and triggers tracked from `sqlite_master`
 **Date:** 2026-03-20
 
 Indexes and triggers are tracked and preserved in generated SQL. Schema fidelity can advance ahead of UI completeness without requiring dedicated panels first.
@@ -535,7 +596,7 @@ Indexes and triggers are tracked and preserved in generated SQL. Schema fidelity
 ### decision-0007: Background diff execution
 **Date:** 2026-03-20
 
-Diff computation runs on a background thread. Further UI-thread loading work extended this to inspection and table refresh.
+Diff computation runs on a background thread. Later responsiveness work extended that handoff model to inspection and visible-table refresh work.
 
 ### decision-0008: Crate metadata aligned for crates.io
 **Date:** 2026-03-21
@@ -557,6 +618,11 @@ Inspection and visible-table refresh run on background worker threads coordinate
 
 Explicit cancellation does not belong in the current background-task model yet. The app reports staged progress and safely supersedes stale work by dropping receivers. Any future cancel control should wait for a cancellable job abstraction rather than bolting partial interruption onto fire-and-forget threads.
 
+### decision-0012: Release status does not imply roadmap freeze
+**Date:** 2026-03-24
+
+v0.1.0 is the first stable baseline, not the end of the repo's purpose. BUILD.md should track the next credible build sequence after release rather than reading like the project is done forever.
+
 ---
 
 ## Risks
@@ -568,15 +634,15 @@ Explicit cancellation does not belong in the current background-task model yet. 
 - Live databases, WAL-backed databases, encrypted databases, and actively changing sources are still only best-effort
 - CI is currently Linux-only even though this is a desktop app and macOS users likely matter
 - Snapshot matching depends on canonicalized paths and can behave awkwardly if files move
-- The current lightweight UI is usable, but product polish can easily outrun underlying scale and correctness work if the order slips
+- The UI is already usable, but polish work can easily outrun underlying scale and correctness work if the order slips
 
 ### Strategic risks
 
 - Feature breadth expanding faster than test coverage could erode the correctness trust that defines Patchworks
 - A plugin system introduces API stability obligations that constrain future refactoring
 - Shared snapshot registries introduce network, auth, and security concerns absent in the local-only model
-- Multi-engine support (Phase 12) could dilute SQLite-specific correctness if abstraction boundaries are drawn wrong
-- The diff engine is currently synchronous and single-threaded at the table level; parallelizing across tables will be needed for large multi-table diffs but introduces ordering and progress-reporting complexity
+- Multi-engine support could dilute SQLite-specific correctness if abstraction boundaries are drawn wrong
+- The diff engine is currently synchronous and single-threaded at the table level; parallelizing across tables may help on large multi-table diffs, but it introduces ordering and progress-reporting complexity
 
 ---
 
@@ -584,30 +650,34 @@ Explicit cancellation does not belong in the current background-task model yet. 
 
 | Question | Phase | Impact |
 |----------|-------|--------|
-| Should the next major investment go into async loading/performance or headless CLI? | 3-4 | Resource allocation |
+| What exact Phase 3 evidence is enough before CLI work starts in earnest? | 3-4 | Sequencing |
 | How far should live/WAL-backed database guarantees go before docs promise more than best-effort? | 3-5 | Trust boundary |
 | Does large-export hardening require a streaming writer API or can the current shape be improved incrementally? | 3 | Architecture |
 | Should `SnapshotStore` remain simple with one connection per operation or get a persistent connection? | 3 | Complexity tradeoff |
-| Is the first release-quality support bar Cargo install only, or does the project need desktop packaging? | 5 | Distribution |
+| Is the next release-quality support bar Cargo install only, or does the project need desktop packaging? | 5 | Distribution |
+| Should the first CLI ship human-readable output only, or stabilize JSON/JSONL immediately? | 4, 11 | Automation contract |
 | Should the plugin system use compiled Rust dynamic libraries, WASM, or both? | 9 | Architecture |
-| Should three-way merge be a core feature or a plugin? | 7 | Scope |
+| Should three-way merge be a core feature or a plugin? | 7, 9 | Scope |
 | How should migration chain state be stored? | 8 | Storage architecture |
 | Is multi-engine support worth the abstraction cost? | 12 | Product identity |
 | Should the shared snapshot registry be a separate service or embedded? | 10 | Architecture |
 
 ---
 
-## Status: Frozen
+## Next planned build passes
 
-This project is released and frozen as of 2026-03-22. The items below represent potential future work if the project is resumed, not active priorities.
+If somebody picks this repo up for the next substantive pass, the most credible sequence is:
 
-### If resumed
+1. **Finish one real Phase 3 hardening slice**
+   - Prefer bounded-memory export work first, unless profiling shows live/WAL correctness is the sharper trust problem.
+2. **Write the Phase 4 CLI contract before implementing all subcommands**
+   - Command names, output shape, and exit codes first.
+3. **Raise Phase 5 confidence in parallel where cheap**
+   - macOS CI smoke path and install verification are high leverage.
+4. **Only then widen into polish or intelligence work**
+   - UX work and advanced diff features should compound on a trustworthy core, not distract from it.
 
-1. Rework SQL export and seeding toward bounded-memory behavior for large databases.
-2. Add sharper tests and docs for live or WAL-backed database behavior so the product's trust boundary is explicit.
-3. Add a macOS CI build smoke path.
-4. Begin designing the CLI command structure for Phase 4 (subcommand layout, output format conventions, exit codes).
-5. Evaluate `clap` subcommand architecture for `patchworks inspect`, `patchworks diff`, `patchworks export`, `patchworks snapshot`.
+If priorities change, replace this list with the new order rather than letting stale direction linger.
 
 ---
 
@@ -635,7 +705,11 @@ This project is released and frozen as of 2026-03-22. The items below represent 
 
 - Added staged progress reporting for background database opens, visible-table refreshes, and diff computation; documented that stale jobs are superseded rather than explicitly cancelled; and landed regression coverage for emitted diff progress plus worker-to-UI progress application. Verified with: `cargo test --lib`, `cargo fmt --all --check`, `cargo test`, `cargo nextest run`, `cargo clippy --all-targets --all-features -- -D warnings`. Next: keep Phase 3 focused on bounded-memory SQL export and seeding plus sharper live and WAL-backed database guidance.
 
-- Released and froze the project. Updated README to release quality, marked BUILD.md and AGENTS.md as released/frozen, cleaned up CHANGELOG, verified all quality gates. Verified with: `cargo build`, `cargo test`, `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`. No TODOs, FIXMEs, or dead code remaining.
+- Captured the v0.1.0 release baseline, updated README/BUILD/AGENTS/CHANGELOG around the shipped surface, and re-verified the core quality gates. Verified with: `cargo build`, `cargo test`, `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`. Next: turn the release baseline into an active next-pass plan instead of letting the repo read as finished forever.
+
+### 2026-03-24
+
+- Reframed `BUILD.md` from a release-tombstone tone into an active post-release execution manual, reopened Phase 3 as the live hardening lane, sharpened Phases 4-5 as the next credible build sequence, and aligned `AGENTS.md` plus `CHANGELOG.md` with the same active-roadmap posture. Verified with: doc audit of `BUILD.md`, `README.md`, `AGENTS.md`, and `CHANGELOG.md`, plus a targeted negative-text search confirming the old closed-out status language is gone from those docs. Next: choose whether the next code pass should attack bounded-memory export first or define the CLI contract first.
 
 ---
 
@@ -647,12 +721,12 @@ This project is released and frozen as of 2026-03-22. The items below represent 
 - 2026-03-20: Views remain inspect-only - this keeps the current scope focused on table-centered diffing and export - any view diff or export support must be added deliberately later.
 - 2026-03-20: Sorted pagination appends a primary-key or `rowid` tie-breaker - this preserves deterministic page boundaries across duplicate sort values - the app should prefer stable browsing over a superficially simpler sort implementation.
 - 2026-03-20: Indexes and triggers are tracked from `sqlite_master` and preserved in generated SQL - this improves migration fidelity without requiring dedicated UI panels first - schema fidelity can advance ahead of UI completeness.
-- 2026-03-20: Diff computation runs on a background thread while inspection still remains synchronous - this was the lowest-friction responsiveness win already landed - further UI-thread loading work was still required and remained active scope.
+- 2026-03-20: Diff computation runs on a background thread while inspection later followed the same task-handoff model - this was the lowest-friction responsiveness win already landed - future performance work should preserve the separation between render and database work.
 - 2026-03-21: Crate metadata and packaged README content were aligned for crates.io and local packaging - this makes `cargo package --allow-dirty` a recorded success path - future docs changes must keep packaged links and publishability checks honest.
 - 2026-03-22: SQL export now prioritizes SQLite foreign-key safety over preserving the original `CREATE TABLE` header text byte-for-byte - schema-changed tables are rebuilt via a temporary replacement table and the generated migration batch guards `PRAGMA foreign_keys` around the operation - inspection normalizes simple table-header quoting so semantic comparisons stay stable even though SQLite rewrites renamed table definitions.
 - 2026-03-22: Inspection and visible-table refresh now run on background worker threads coordinated from `src/app.rs` - this keeps `ui/` presentation-focused while allowing stale page-refresh results to be dropped by replacing their receivers - future responsiveness work should build on this task-handoff shape instead of reintroducing synchronous database reads in the render loop.
 - 2026-03-22: Explicit cancellation does not belong in the current background-task model yet - the app now reports staged progress and safely supersedes stale work by dropping receivers, but the detached worker threads do not have cooperative cancellation checkpoints across inspection, diff, and export - any future cancel control should wait for a cancellable job abstraction rather than bolting partial interruption onto the current fire-and-forget threads.
-- 2026-03-22: Released and froze the project at v0.1.0 - all quality gates pass, README is release-quality, known limits are documented honestly, remaining Phase 3 stretch items and all future phases are deferred.
+- 2026-03-24: Release is the first trustworthy baseline, not the end of the roadmap - BUILD.md, AGENTS.md, and CHANGELOG.md should keep the project readable as active post-v0.1.0 work - future documentation passes must preserve real open work instead of flattening the repo into a finished artifact.
 
 ---
 
