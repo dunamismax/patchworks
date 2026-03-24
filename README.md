@@ -1,5 +1,7 @@
 # patchworks
 
+[![CI](https://github.com/dunamismax/patchworks/actions/workflows/ci.yml/badge.svg)](https://github.com/dunamismax/patchworks/actions/workflows/ci.yml) [![crates.io](https://img.shields.io/crates/v/patchworks.svg)](https://crates.io/crates/patchworks) [![docs.rs](https://docs.rs/patchworks/badge.svg)](https://docs.rs/patchworks) [![MSRV](https://img.shields.io/badge/MSRV-1.75-blue.svg)](https://github.com/dunamismax/patchworks/blob/main/Cargo.toml) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Git-style diffs for SQLite databases.**
 
 Patchworks is a native desktop tool that treats SQLite databases the way `git diff` treats source code. Open one database to inspect it. Open two to see exactly what changed — every schema modification, every row added, removed, or altered — then generate the SQL to reconcile them.
