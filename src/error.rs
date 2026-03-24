@@ -22,6 +22,9 @@ pub enum PatchworksError {
     /// The requested operation requires a database path.
     #[error("a database path is required for this operation")]
     MissingDatabasePath,
+    /// Wrapper for JSON serialization failures.
+    #[error("JSON serialization error: {0}")]
+    Json(#[from] serde_json::Error),
     /// The requested operation could not be completed because the data was inconsistent.
     #[error("{0}")]
     InvalidState(String),

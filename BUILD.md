@@ -35,15 +35,16 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current release posture
 
-**Patchworks v0.1.0 is released, and the project is still active.** The desktop app already ships inspection, diffing, snapshots, and SQL export. The next job is to extend that trustworthy core deliberately: harden scale-sensitive paths, define the headless automation surface, and raise platform confidence without pretending unfinished work is done.
+**Patchworks v0.2.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. The next job is to raise platform confidence and begin product polish without pretending unfinished work is done.
 
 ## Current execution posture
 
 Patchworks is in the healthy middle state between prototype and finished platform.
 
-- **Shipped baseline:** v0.1.0 exists on crates.io and is already useful as a native desktop SQLite inspection and comparison tool.
+- **Shipped baseline:** v0.2.0 exists on crates.io with both desktop GUI and headless CLI.
 - **Hardening complete:** Phase 3 landed streaming export, bounded-memory table seeding, WAL regression coverage, and explicit trust-boundary documentation.
-- **Active lane:** define the headless CLI surface (Phase 4) and raise platform confidence (Phase 5).
+- **CLI complete:** Phase 4 landed headless subcommands for inspect, diff, export, and snapshot management with JSON output and CI-friendly exit codes.
+- **Active lane:** raise platform confidence (Phase 5) and begin product polish (Phase 6).
 - **Discipline:** roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -52,10 +53,10 @@ If a future pass changes the real priorities, update this section first rather t
 
 ## Repo snapshot
 
-**Status: Released (v0.1.0), active roadmap continuing**
+**Status: Released (v0.2.0), active roadmap continuing**
 
-**Package:** crates.io [`patchworks`](https://crates.io/crates/patchworks) (`0.1.0`)
-**Primary surface:** native Rust desktop app via `egui`/`eframe`
+**Package:** crates.io [`patchworks`](https://crates.io/crates/patchworks) (`0.2.0`)
+**Primary surfaces:** native Rust desktop app via `egui`/`eframe` and headless CLI
 
 What exists:
 
@@ -68,11 +69,13 @@ What exists:
 - Preserves tracked indexes and triggers in generated SQL
 - Guards `PRAGMA foreign_keys` and uses temporary-table rebuilds for schema-changed tables
 - Runs inspection, table loading, and diffing on background threads with staged progress
-- Ships a small CLI surface for app launch plus `--snapshot <db>`
+- Headless CLI subcommands: `inspect`, `diff`, `export`, `snapshot save/list/delete`
+- Machine-readable JSON output (`--format json`) on inspect, diff, and snapshot list
+- CI-friendly exit codes: 0 = success, 1 = error, 2 = differences found
+- File output for exports (`-o/--output`)
 
 What does **not** exist yet:
 
-- Headless CLI commands for inspect, diff, SQL export, snapshot listing, or snapshot cleanup
 - View diffing or export support
 - Explicit cancel control for long-running background jobs
 - Formal desktop packaging or installer automation beyond Cargo packaging
@@ -84,7 +87,7 @@ What does **not** exist yet:
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
 - Host: macOS arm64 (`Darwin 25.4.0`)
-- Release verification: build, test (34 tests), nextest, clippy, fmt, bench-compile, deny, and CLI help were recorded passing
+- Release verification: build, test (58 tests), nextest (58 passed), clippy, fmt, bench-compile, deny, and CLI help were recorded passing
 
 This baseline is still useful, but it is not permission to stop verifying. Any later change that touches product behavior should record its own narrower proof.
 
@@ -103,7 +106,8 @@ This baseline is still useful, but it is not permission to stop verifying. Any l
 | `Cargo.toml` | Package manifest, dependency graph, crate publishing posture |
 | `deny.toml` | Dependency policy |
 | `.github/workflows/ci.yml` | CI entrypoint |
-| `src/main.rs` | CLI surface and startup behavior |
+| `src/main.rs` | CLI entrypoint, subcommand dispatch, and startup behavior |
+| `src/cli.rs` | Headless CLI command implementations |
 | `src/app.rs` | Top-level app orchestration, background task wiring, UI-to-backend coordination |
 | `src/error.rs` | Shared error model |
 | `src/db/inspector.rs` | SQLite inspection, paging, and summary loading |
@@ -115,6 +119,7 @@ This baseline is still useful, but it is not permission to stop verifying. Any l
 | `src/diff/export.rs` | SQL export generation |
 | `src/state/workspace.rs` | UI-facing workspace state |
 | `src/ui/` | Rendering and interaction surfaces |
+| `tests/cli_tests.rs` | CLI command behavior and CLI/GUI parity expectations |
 | `tests/diff_tests.rs` | Diff and export behavior expectations |
 | `tests/proptest_invariants.rs` | Property-based invariant checks |
 | `tests/snapshot_tests.rs` | Snapshot behavior expectations |
@@ -203,18 +208,18 @@ Do not record these as passed unless they were actually run in the repo. If a ga
 
 ### Currently recorded verified commands
 
-Re-verified on 2026-03-24:
+Re-verified on 2026-03-24 (v0.2.0 release):
 
 - `cargo build`
-- `cargo test`
-- `cargo nextest run`
+- `cargo test` (58 tests)
+- `cargo nextest run` (58 passed)
 - `cargo fmt --all --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo bench --no-run`
 - `cargo deny check`
 - `cargo run -- --help`
 
-Still recorded from the 2026-03-21 packaging pass, but not re-run in the 2026-03-22 diff/export hardening pass:
+Still recorded from the 2026-03-21 packaging pass:
 
 - `cargo metadata --no-deps --format-version 1`
 - `cargo package --allow-dirty --list`
@@ -226,6 +231,12 @@ Supported by the codebase but not fully re-verified in the recorded passes above
 - `cargo run`
 - `cargo run -- app.db`
 - `cargo run -- left.db right.db`
+- `cargo run -- inspect <db>`
+- `cargo run -- diff <left> <right>`
+- `cargo run -- export <left> <right>`
+- `cargo run -- snapshot save <db>`
+- `cargo run -- snapshot list`
+- `cargo run -- snapshot delete <id>`
 - `cargo install --path .`
 - `cargo install patchworks`
 
@@ -246,27 +257,25 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 
 ## Current priority stack
 
-### Priority 1 — Define the Phase 4 CLI without forking the backend
+### Priority 1 — Raise platform confidence for the next release-quality bar
 
-Patchworks needs a headless surface, but the CLI must reuse the same truth layer as the desktop app.
-
-The next meaningful CLI work is not just wiring `clap`; it is deciding:
-
-- subcommand layout
-- output contract
-- exit codes
-- which commands are worth stabilizing first
-- what verification and fixtures prove CLI/GUI parity
-
-### Priority 2 — Raise platform confidence for the next release-quality bar
-
-The product is desktop-shaped. Linux-only CI and unrecorded install verification are still a gap.
+The product is now dual-surface (GUI + CLI). Linux-only CI and unrecorded install verification are still a gap.
 
 Near-term release-confidence work:
 
 - re-verify install paths and record the result
 - add a macOS CI build smoke path
 - decide whether Cargo install alone is enough or whether desktop packaging belongs in the next release band
+
+### Priority 2 — Product polish and UX refinement
+
+The core functionality is trustworthy. Begin refining the desktop experience and making the tool feel durable.
+
+Near-term polish work:
+
+- decide whether views should gain diff/export support
+- add search and filter across tables
+- refine diff UX and keyboard shortcuts
 
 If a code pass does not obviously move one of these priorities, it should say why.
 
@@ -280,7 +289,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 1 | Desktop inspection, diff, snapshot, and export MVP | **Done** |
 | 2 | Schema-object fidelity and quality rails | **Done** |
 | 3 | Responsiveness and large-database hardening | **Done** |
-| 4 | Headless CLI and automation surface | **Queued** |
+| 4 | Headless CLI and automation surface | **Done** |
 | 5 | Packaging, platform confidence, and release discipline | **Queued** |
 | 6 | Product polish and UX refinement | **Planned** |
 | 7 | Advanced diff intelligence | **Planned** |
@@ -290,7 +299,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 11 | CI/CD integration and automation ecosystem | **Planned** |
 | 12 | Long-term platform evolution | **Exploratory** |
 
-Phases 0-3 are the shipped foundation. Phase 4 (headless CLI) and Phase 5 (platform confidence) are the next active build steps.
+Phases 0-4 are the shipped foundation. Phase 5 (platform confidence) and Phase 6 (product polish) are the next active build steps.
 
 ---
 
@@ -377,27 +386,27 @@ Residual limits acknowledged:
 ---
 
 ### Phase 4 — Headless CLI and automation surface
-**Status: queued**
+**Status: done**
 
 Goals:
-- [ ] Design the command shape for `patchworks inspect`, `patchworks diff`, `patchworks export`, and `patchworks snapshot ...`
-- [ ] Add a headless inspect command
-- [ ] Add a headless diff command
-- [ ] Add a headless SQL export command
-- [ ] Add snapshot listing and cleanup commands
-- [ ] Decide which machine-readable output formats belong in the first CLI expansion
-- [ ] Define and document exit code conventions early instead of retrofitting them later
-- [ ] Keep the CLI on the same backend logic rather than forking separate comparison code
-- [ ] Add CLI-focused fixtures or golden-output checks that prove parity with the GUI-backed truth layer
+- [x] Design the command shape for `patchworks inspect`, `patchworks diff`, `patchworks export`, and `patchworks snapshot ...`
+- [x] Add a headless inspect command
+- [x] Add a headless diff command
+- [x] Add a headless SQL export command
+- [x] Add snapshot listing and cleanup commands
+- [x] Decide which machine-readable output formats belong in the first CLI expansion (human + JSON via `--format`)
+- [x] Define and document exit code conventions early instead of retrofitting them later (0 = ok, 1 = error, 2 = diff found)
+- [x] Keep the CLI on the same backend logic rather than forking separate comparison code
+- [x] Add CLI-focused fixtures or golden-output checks that prove parity with the GUI-backed truth layer
 
 Exit criteria:
-- [ ] Patchworks can participate in scripted workflows, not only interactive desktop sessions
-- [ ] CLI and GUI paths share the same diff and export truth layer
-- [ ] The first CLI contract is small enough to support, but real enough to build automation on top of
+- [x] Patchworks can participate in scripted workflows, not only interactive desktop sessions
+- [x] CLI and GUI paths share the same diff and export truth layer
+- [x] The first CLI contract is small enough to support, but real enough to build automation on top of
 
-Risks:
-- **risk:** CLI and GUI diverging on diff behavior if backend logic is forked
-- **risk:** locking in output or exit-code conventions too late makes automation harder to trust
+Risks addressed:
+- **mitigated:** CLI calls the same `diff_databases`, `inspect_database`, `write_export`, and `SnapshotStore` functions as the GUI — no forked logic
+- **mitigated:** exit codes and output formats are documented and tested from day one
 
 ---
 
@@ -622,6 +631,11 @@ Large-table diffing stays single-threaded at the table level. The streaming merg
 
 `SnapshotStore` continues opening a fresh SQLite connection for each operation rather than holding a persistent connection. The snapshot metadata database is tiny and accessed infrequently; a persistent connection would add lifetime complexity without measurable benefit. Revisit only if contention evidence appears.
 
+### decision-0015: CLI shares the GUI's backend truth layer
+**Date:** 2026-03-24
+
+Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` functions as the desktop GUI. No separate comparison or export logic exists for the CLI. Integration tests explicitly verify CLI/GUI parity. This eliminates the risk of behavioral divergence between surfaces.
+
 ---
 
 ## Risks
@@ -664,13 +678,13 @@ Large-table diffing stays single-threaded at the table level. The streaming merg
 
 If somebody picks this repo up for the next substantive pass, the most credible sequence is:
 
-1. **Write the Phase 4 CLI contract before implementing all subcommands**
-   - Command names, output shape, and exit codes first.
-   - Start with `patchworks inspect` and `patchworks diff` as the simplest headless proof points.
-2. **Raise Phase 5 confidence in parallel where cheap**
+1. **Raise Phase 5 confidence**
    - macOS CI smoke path and install verification are high leverage.
-3. **Only then widen into polish or intelligence work**
-   - UX work and advanced diff features should compound on a trustworthy core, not distract from it.
+   - Decide whether the project needs release archives, installers, or desktop packaging beyond Cargo install.
+2. **Begin Phase 6 polish work**
+   - UX refinements, keyboard shortcuts, theme support, search/filter.
+3. **Only then widen into intelligence or migration workflow work**
+   - Advanced diff features and migration chains should compound on a trustworthy and polished core.
 
 If priorities change, replace this list with the new order rather than letting stale direction linger.
 
@@ -724,10 +738,15 @@ If priorities change, replace this list with the new order rather than letting s
 - 2026-03-24: Release is the first trustworthy baseline, not the end of the roadmap - BUILD.md, AGENTS.md, and CHANGELOG.md should keep the project readable as active post-v0.1.0 work - future documentation passes must preserve real open work instead of flattening the repo into a finished artifact.
 - 2026-03-24: Large-table diffing stays single-threaded at the table level - the streaming merge is I/O-bound against SQLite reads and parallelizing across tables would add ordering and progress-reporting complexity without clear throughput gains - revisit only with profiling evidence of CPU-bound bottlenecks.
 - 2026-03-24: SnapshotStore keeps per-operation connections rather than a persistent connection - the snapshot metadata database is tiny and accessed infrequently - a persistent connection would add lifetime complexity without measurable benefit.
+- 2026-03-24: Headless CLI subcommands reuse the same backend functions as the GUI rather than implementing separate comparison or export logic - this eliminates the risk of CLI/GUI divergence - integration tests explicitly verify parity between the two surfaces.
 
 ### 2026-03-24 (Phase 3 completion)
 
 - Refactored SQL export to a streaming `Write`-based API (`write_export`) that flushes one SQL statement at a time instead of accumulating a `Vec<String>`. The existing `export_diff_as_sql` is now a thin convenience wrapper that collects to `String` for GUI preview. Added `for_each_row` to `inspector.rs` as the bounded-memory alternative to `load_all_rows` — table seeding during export no longer materializes the full table in memory. Added 6 new integration tests: WAL-mode database inspection and diffing, streaming export parity with in-memory export, file-based streaming export round-trip, large-table (5000+ rows) streaming export verification, empty database diff, and table-added-from-empty diff. Documented the live/WAL trust boundary explicitly in README.md. Made two deferred decisions explicit: single-threaded table-level diffing is sufficient (decision-0013), and SnapshotStore keeps per-operation connections (decision-0014). Verified with: `cargo build`, `cargo test` (34 tests), `cargo nextest run` (34 passed), `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo bench --no-run`, `cargo deny check`, `cargo run -- --help`. Next: Phase 4 CLI contract design and Phase 5 platform confidence.
+
+### 2026-03-24 (Phase 4 completion — v0.2.0 release)
+
+- Implemented the full Phase 4 headless CLI surface: `patchworks inspect`, `patchworks diff`, `patchworks export`, and `patchworks snapshot save/list/delete`. All CLI commands share the same backend truth layer as the GUI — `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` are called directly, not forked. Added `--format human|json` on inspect, diff, and snapshot list. Added `-o/--output` on export for file output. Defined exit code conventions: 0 = success/no differences, 1 = error, 2 = differences found. Added `src/cli.rs` with 7 unit tests and `tests/cli_tests.rs` with 18 integration tests including CLI/GUI parity proofs. Restructured `main.rs` from flat args to clap subcommands while preserving backward compatibility (`--snapshot <db>` and bare file arguments still work). Added `list_all_snapshots()` and `delete_snapshot()` to `SnapshotStore`. Added `Json` variant to `PatchworksError` for structured output support. Verified with: `cargo build`, `cargo test` (58 tests), `cargo nextest run` (58 passed), `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo bench --no-run`, `cargo deny check`, `cargo run -- --help`. Published as v0.2.0 to crates.io. Next: Phase 5 platform confidence and Phase 6 product polish.
 
 ---
 

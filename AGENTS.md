@@ -9,7 +9,7 @@ Secondary agent-oriented project memory for Patchworks. `BUILD.md` is the primar
 - Name: Patchworks
 - Tagline: Git-style visual diffs for SQLite databases
 - Stack: Rust 2021, egui/eframe, rusqlite (bundled), serde, clap, tracing, criterion, proptest
-- Package: crates.io `patchworks` (`0.1.0`)
+- Package: crates.io `patchworks` (`0.2.0`)
 - License: MIT
 
 ## Vision
@@ -19,7 +19,8 @@ Patchworks is evolving from a desktop inspection tool into a complete SQLite lif
 ## Architecture
 
 ```
-src/main.rs       → CLI entrypoint, thin
+src/main.rs       → CLI entrypoint and subcommand dispatch
+src/cli.rs        → Headless CLI command implementations
 src/app.rs        → Application coordinator, background task management
 src/db/           → SQLite inspection, snapshots, diff orchestration, types
 src/diff/         → Schema diffing, streaming row diffs, SQL export
@@ -58,11 +59,11 @@ cargo run -- --help
 
 ## Current State (2026-03-24)
 
-**Released (v0.1.0) and still active.** Phases 0-3 are shipped. Phase 4 (headless CLI) and Phase 5 (platform confidence) are the next build steps.
+**Released (v0.2.0) and still active.** Phases 0-4 are shipped. Phase 5 (platform confidence) and Phase 6 (product polish) are the next build steps.
 
-What works: inspect, browse, diff (schema + rows), snapshots, SQL export with FK safety and trigger preservation, background processing with progress, streaming bounded-memory export to file.
+What works: inspect, browse, diff (schema + rows), snapshots, SQL export with FK safety and trigger preservation, background processing with progress, streaming bounded-memory export to file, headless CLI with subcommands for inspect/diff/export/snapshot, JSON output, CI-friendly exit codes.
 
-Known limits: no headless CLI yet, views are inspect-only, no explicit cancel, GUI preview path still collects full export in memory, best-effort on live/WAL databases (read-only access; concurrent writes may produce inconsistent results).
+Known limits: views are inspect-only, no explicit cancel, GUI preview path still collects full export in memory, best-effort on live/WAL databases (read-only access; concurrent writes may produce inconsistent results).
 
 ## Known Caveats
 

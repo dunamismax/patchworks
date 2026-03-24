@@ -143,6 +143,50 @@ impl SnapshotStore {
         Ok(PathBuf::from(path))
     }
 
+    /// Lists all snapshots across all source databases, newest-first.
+    pub fn list_all_snapshots(&self) -> Result<Vec<Snapshot>> {
+        let connection = Connection::open(&self.paths.meta_db)?;
+        let mut statement = connection.prepare(
+            "
+            SELECT id, name, source_path, created_at, table_count, total_rows
+            FROM snapshots
+            ORDER BY created_at DESC
+            ",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(Snapshot {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                source_path: row.get(2)?,
+                created_at: row.get(3)?,
+                table_count: row.get::<_, i64>(4)? as u32,
+                total_rows: row.get::<_, i64>(5)? as u64,
+            })
+        })?;
+
+        let mut snapshots = Vec::new();
+        for row in rows {
+            snapshots.push(row?);
+        }
+        Ok(snapshots)
+    }
+
+    /// Deletes a snapshot by ID, removing both the metadata row and the stored database file.
+    pub fn delete_snapshot(&self, snapshot_id: &str) -> Result<bool> {
+        let snapshot_path = self.load_snapshot_path(snapshot_id).ok();
+
+        let connection = Connection::open(&self.paths.meta_db)?;
+        let deleted = connection.execute("DELETE FROM snapshots WHERE id = ?1", [snapshot_id])?;
+
+        if let Some(path) = snapshot_path {
+            if path.exists() {
+                fs::remove_file(&path)?;
+            }
+        }
+
+        Ok(deleted > 0)
+    }
+
     fn ensure_schema(&self) -> Result<()> {
         let connection = Connection::open(&self.paths.meta_db)?;
         connection.execute_batch(

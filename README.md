@@ -8,7 +8,7 @@ Patchworks is a native desktop tool that treats SQLite databases the way `git di
 
 No cloud. No account. No daemon. One binary, your databases, the truth.
 
-> **Status:** SQLite inspection, schema diffing, row diffing, local snapshot storage, and SQL export are implemented in the desktop app today. Headless CLI workflows and view diff/export remain ahead.
+> **Status:** SQLite inspection, schema diffing, row diffing, local snapshot storage, and SQL export are available in both the desktop GUI and headless CLI. View diff/export remains ahead.
 
 ## Why patchworks?
 
@@ -45,6 +45,8 @@ cargo build --release
 
 ## Usage
 
+### Desktop GUI
+
 ```bash
 # Launch empty — open databases from the UI
 patchworks
@@ -54,10 +56,37 @@ patchworks app.db
 
 # Diff two databases
 patchworks left.db right.db
-
-# Snapshot a database for later comparison
-patchworks --snapshot app.db
 ```
+
+### Headless CLI
+
+```bash
+# Inspect a database (schema, tables, columns, views, indexes, triggers)
+patchworks inspect app.db
+patchworks inspect app.db --format json
+
+# Diff two databases
+patchworks diff left.db right.db
+patchworks diff left.db right.db --format json
+
+# Generate a SQL migration
+patchworks export left.db right.db
+patchworks export left.db right.db -o migration.sql
+
+# Manage snapshots
+patchworks snapshot save app.db --name "before-migration"
+patchworks snapshot list
+patchworks snapshot list --source app.db --format json
+patchworks snapshot delete <uuid>
+```
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success, no differences |
+| 1 | Error (bad path, SQLite failure, etc.) |
+| 2 | Differences found (useful for CI gates) |
 
 ## How it works
 
@@ -74,7 +103,8 @@ The UI is built on [egui](https://github.com/emilk/egui) — immediate-mode, GPU
 
 ```text
 src/
-├── main.rs            # CLI entrypoint
+├── main.rs            # CLI entrypoint and subcommand dispatch
+├── cli.rs             # Headless CLI command implementations
 ├── app.rs             # Application coordinator and background task management
 ├── lib.rs             # Library root
 ├── error.rs           # Shared error model
@@ -105,7 +135,6 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for deep technical details.
 
 ## Known limits
 
-- **GUI-first.** No headless CLI for inspect/diff/export yet.
 - **Views are inspect-only.** They are not diffed or exported.
 - **No explicit cancel.** Long-running jobs show progress but can only be superseded, not interrupted.
 - **Best-effort on live databases.** Stable files give the best results; WAL-backed or actively changing databases are handled on a best-effort basis. The tool opens databases in read-only mode and will read from WAL-mode databases, but concurrent writes by other processes during inspection or diff can produce inconsistent snapshots. For reliable results, operate on quiescent database files or use the snapshot feature to capture a stable copy first.
@@ -115,7 +144,7 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for deep technical details.
 1. **Correctness over cleverness.** A heavier migration that is semantically correct beats a minimal one that breaks edge cases.
 2. **SQLite-native.** Preserve the nuance of SQLite (rowid, WITHOUT ROWID, WAL, PRAGMA behavior) instead of flattening into generic database abstractions.
 3. **Honest scope.** Never describe future work as present capability.
-4. **Desktop-first, automation-ready.** The GUI is the primary surface today, but every backend capability is designed to be usable without a window.
+4. **Desktop and CLI.** The GUI and headless CLI share the same backend truth layer. Every inspection, diff, and export capability is available in both.
 5. **Single binary, zero config.** `cargo install patchworks` is all you need.
 
 ## Verification

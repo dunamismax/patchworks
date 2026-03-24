@@ -4,7 +4,25 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-24
+
 ### Added
+- **Headless CLI subcommands** — Patchworks is no longer GUI-only:
+  - `patchworks inspect <db>` — print schema summary (tables, columns, views, indexes, triggers)
+  - `patchworks diff <left> <right>` — show schema and data changes between two databases
+  - `patchworks export <left> <right>` — generate SQL migration to transform left into right
+  - `patchworks snapshot save <db>` — save a snapshot of a database
+  - `patchworks snapshot list` — list saved snapshots (optionally filtered by source)
+  - `patchworks snapshot delete <id>` — delete a saved snapshot
+- `--format human|json` flag on `inspect`, `diff`, and `snapshot list` for machine-readable output
+- `-o/--output <file>` flag on `export` to write SQL migration directly to a file
+- Exit code conventions: 0 = success/no differences, 1 = error, 2 = differences found (enables CI gating)
+- JSON serialization error variant in `PatchworksError` to support structured CLI output
+- `list_all_snapshots()` and `delete_snapshot()` methods on `SnapshotStore`
+- `src/cli.rs` module with all headless command logic, sharing the same backend truth layer as the GUI
+- 18 new CLI integration tests in `tests/cli_tests.rs` proving CLI/GUI parity
+- 7 unit tests in `src/cli.rs` for command output behavior
+- Backward compatibility: `--snapshot <db>` legacy flag still works, bare arguments still launch the GUI
 - Streaming SQL export API (`write_export`) that writes one statement at a time to any `Write` sink for bounded-memory large migrations
 - Row-at-a-time table seeding via `for_each_row` — export no longer materializes entire tables in memory
 - WAL-mode database regression test covering inspection, diffing, and export application
@@ -13,10 +31,11 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 - Explicit live/WAL trust boundary documentation in README.md
 
 ### Changed
-- Reframed `BUILD.md` as an active post-release execution manual instead of a closed-out project memo
-- Aligned `AGENTS.md` with the active roadmap posture after v0.1.0
+- CLI restructured from flat args to clap subcommands (backward-compatible with existing usage)
+- Phase 4 (Headless CLI and automation surface) marked complete
 - Phase 3 (responsiveness and large-database hardening) marked complete
 - SQL export internals refactored from `Vec<String>` accumulation to streaming `Write` output
+- Reframed `BUILD.md` as an active post-release execution manual
 
 ## [0.1.0-post] - 2026-03-22
 
@@ -70,5 +89,6 @@ Initial release on crates.io.
 - Best-effort handling of live/WAL-backed databases
 - Linux-only CI
 
-[Unreleased]: https://github.com/dunamismax/patchworks/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/dunamismax/patchworks/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/dunamismax/patchworks/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/dunamismax/patchworks/releases/tag/v0.1.0
