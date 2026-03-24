@@ -311,7 +311,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 12 | Long-term platform evolution | **Exploratory** |
 | 13 | Tauri 2 desktop shell | **Planned** |
 
-Phases 0-5 are the shipped foundation. Phase 6 (product polish) is the next active build step.
+Phases 0-6 are the shipped foundation. Phase 7 (advanced diff intelligence) is the next active build step.
 
 ---
 
