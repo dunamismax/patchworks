@@ -133,11 +133,32 @@ src/
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for deep technical details.
 
+## Operational guidance
+
+### Live and WAL-mode databases
+
+Patchworks opens databases in **read-only mode** and will read from WAL-mode databases. However, concurrent writes by other processes during inspection or diff can produce inconsistent results — you may see partial transactions or mid-write state.
+
+**For reliable results:**
+
+- Operate on quiescent database files (no other writers active)
+- Use `patchworks snapshot save <db>` to capture a stable copy before comparing
+- If you must inspect a live database, treat the output as advisory rather than authoritative
+- Encrypted databases are not supported
+
+### Large databases
+
+The diff engine streams row comparisons and the export path writes one statement at a time to bound memory. However, the GUI preview path collects the full export into a `String`, so very large migrations displayed in the desktop UI may use significant memory. For large exports, prefer the CLI with file output:
+
+```bash
+patchworks export left.db right.db -o migration.sql
+```
+
 ## Known limits
 
 - **Views are inspect-only.** They are not diffed or exported.
 - **No explicit cancel.** Long-running jobs show progress but can only be superseded, not interrupted.
-- **Best-effort on live databases.** Stable files give the best results; WAL-backed or actively changing databases are handled on a best-effort basis. The tool opens databases in read-only mode and will read from WAL-mode databases, but concurrent writes by other processes during inspection or diff can produce inconsistent snapshots. For reliable results, operate on quiescent database files or use the snapshot feature to capture a stable copy first.
+- **CI badge covers Linux and macOS.** Other platforms are untested.
 
 ## Design principles
 

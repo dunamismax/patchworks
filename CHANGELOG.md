@@ -4,6 +4,24 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-24
+
+### Added
+- **macOS CI** — CI now runs the full quality gate on both Linux and macOS via a build matrix
+- Dedicated "Operational guidance" section in README covering live/WAL-mode databases and large database handling
+- Verified install paths: both `cargo install --path .` and `cargo install patchworks` recorded passing on macOS arm64
+
+### Changed
+- CI workflow updated from single-platform (Linux) to multi-platform matrix (Linux + macOS)
+- Phase 5 (Packaging, platform confidence, and release discipline) marked complete
+- README "Known limits" section refined and expanded with operational guidance
+- Git remote normalized to dual-push SSH (GitHub + Codeberg)
+
+### Decisions
+- Cargo install is the distribution story for now; desktop packaging deferred (decision-0016)
+- CI covers Linux and macOS; Windows deferred (decision-0017)
+- Platform-specific GUI smoke tests deferred; CLI tests cover the backend truth layer (decision-0018)
+
 ## [0.2.0] - 2026-03-24
 
 ### Added
@@ -89,6 +107,7 @@ Initial release on crates.io.
 - Best-effort handling of live/WAL-backed databases
 - Linux-only CI
 
-[Unreleased]: https://github.com/dunamismax/patchworks/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/dunamismax/patchworks/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/dunamismax/patchworks/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dunamismax/patchworks/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/dunamismax/patchworks/releases/tag/v0.1.0

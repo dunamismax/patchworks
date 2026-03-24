@@ -35,16 +35,17 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current release posture
 
-**Patchworks v0.2.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. The next job is to raise platform confidence and begin product polish without pretending unfinished work is done.
+**Patchworks v0.3.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. CI now covers both Linux and macOS. Install paths (`cargo install --path .` and `cargo install patchworks`) are verified. The next job is product polish (Phase 6) without pretending unfinished work is done.
 
 ## Current execution posture
 
 Patchworks is in the healthy middle state between prototype and finished platform.
 
-- **Shipped baseline:** v0.2.0 exists on crates.io with both desktop GUI and headless CLI.
+- **Shipped baseline:** v0.3.0 exists on crates.io with both desktop GUI and headless CLI.
 - **Hardening complete:** Phase 3 landed streaming export, bounded-memory table seeding, WAL regression coverage, and explicit trust-boundary documentation.
 - **CLI complete:** Phase 4 landed headless subcommands for inspect, diff, export, and snapshot management with JSON output and CI-friendly exit codes.
-- **Active lane:** raise platform confidence (Phase 5) and begin product polish (Phase 6).
+- **Platform confidence complete:** Phase 5 landed macOS CI, verified install paths, tightened operational guidance in README, and recorded packaging decisions.
+- **Active lane:** product polish (Phase 6).
 - **Discipline:** roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -53,9 +54,9 @@ If a future pass changes the real priorities, update this section first rather t
 
 ## Repo snapshot
 
-**Status: Released (v0.2.0), active roadmap continuing**
+**Status: Released (v0.3.0), active roadmap continuing**
 
-**Package:** crates.io [`patchworks`](https://crates.io/crates/patchworks) (`0.2.0`)
+**Package:** crates.io [`patchworks`](https://crates.io/crates/patchworks) (`0.3.0`)
 **Primary surfaces:** native Rust desktop app via `egui`/`eframe` and headless CLI
 
 What exists:
@@ -87,7 +88,8 @@ What does **not** exist yet:
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
 - Host: macOS arm64 (`Darwin 25.4.0`)
-- Release verification: build, test (58 tests), nextest (58 passed), clippy, fmt, bench-compile, deny, and CLI help were recorded passing
+- Release verification: build, test (58 tests), clippy, fmt, bench-compile, deny, and CLI help were recorded passing
+- Install verification: both `cargo install --path .` and `cargo install patchworks` (from crates.io) recorded passing on macOS arm64
 
 This baseline is still useful, but it is not permission to stop verifying. Any later change that touches product behavior should record its own narrower proof.
 
@@ -208,16 +210,17 @@ Do not record these as passed unless they were actually run in the repo. If a ga
 
 ### Currently recorded verified commands
 
-Re-verified on 2026-03-24 (v0.2.0 release):
+Re-verified on 2026-03-24 (v0.3.0 release):
 
 - `cargo build`
 - `cargo test` (58 tests)
-- `cargo nextest run` (58 passed)
 - `cargo fmt --all --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo bench --no-run`
 - `cargo deny check`
 - `cargo run -- --help`
+- `cargo install --path .`
+- `cargo install patchworks` (from crates.io)
 
 Still recorded from the 2026-03-21 packaging pass:
 
@@ -257,25 +260,27 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 
 ## Current priority stack
 
-### Priority 1 — Raise platform confidence for the next release-quality bar
+### Priority 1 — Product polish and UX refinement
 
-The product is now dual-surface (GUI + CLI). Linux-only CI and unrecorded install verification are still a gap.
-
-Near-term release-confidence work:
-
-- re-verify install paths and record the result
-- add a macOS CI build smoke path
-- decide whether Cargo install alone is enough or whether desktop packaging belongs in the next release band
-
-### Priority 2 — Product polish and UX refinement
-
-The core functionality is trustworthy. Begin refining the desktop experience and making the tool feel durable.
+The core functionality is trustworthy. Platform confidence is established. Begin refining the desktop experience and making the tool feel durable.
 
 Near-term polish work:
 
 - decide whether views should gain diff/export support
 - add search and filter across tables
 - refine diff UX and keyboard shortcuts
+- add theme support (light/dark)
+- add keyboard shortcuts for core workflows
+
+### Priority 2 — Advanced diff intelligence
+
+Once the product feels polished, begin adding smarter diff capabilities.
+
+Near-term intelligence work:
+
+- column-level change highlighting within modified rows
+- diff filtering by change type and by table
+- diff statistics and summary views
 
 If a code pass does not obviously move one of these priorities, it should say why.
 
@@ -290,8 +295,8 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 2 | Schema-object fidelity and quality rails | **Done** |
 | 3 | Responsiveness and large-database hardening | **Done** |
 | 4 | Headless CLI and automation surface | **Done** |
-| 5 | Packaging, platform confidence, and release discipline | **Queued** |
-| 6 | Product polish and UX refinement | **Planned** |
+| 5 | Packaging, platform confidence, and release discipline | **Done** |
+| 6 | Product polish and UX refinement | **Queued** |
 | 7 | Advanced diff intelligence | **Planned** |
 | 8 | Migration workflow management | **Planned** |
 | 9 | Plugin and extension architecture | **Exploratory** |
@@ -299,7 +304,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 11 | CI/CD integration and automation ecosystem | **Planned** |
 | 12 | Long-term platform evolution | **Exploratory** |
 
-Phases 0-4 are the shipped foundation. Phase 5 (platform confidence) and Phase 6 (product polish) are the next active build steps.
+Phases 0-5 are the shipped foundation. Phase 6 (product polish) is the next active build step.
 
 ---
 
@@ -411,20 +416,20 @@ Risks addressed:
 ---
 
 ### Phase 5 — Packaging, platform confidence, and release discipline
-**Status: queued**
+**Status: done**
 
 Goals:
-- [ ] Re-verify `cargo install --path .` and/or `cargo install patchworks` explicitly and record the result
-- [ ] Add at least one macOS CI build smoke path in addition to Linux
-- [ ] Decide whether the project needs release archives, installers, or desktop packaging beyond Cargo install
-- [ ] Tighten README and BUILD guidance around live databases, WAL mode, and other operational caveats
-- [ ] Define what the next release-quality support bar actually is (`0.1.x` polish vs `0.2.0` scope)
-- [ ] Decide whether platform-specific smoke tests need minimal fixture databases for launch-and-open scenarios
+- [x] Re-verify `cargo install --path .` and/or `cargo install patchworks` explicitly and record the result
+- [x] Add at least one macOS CI build smoke path in addition to Linux
+- [x] Decide whether the project needs release archives, installers, or desktop packaging beyond Cargo install
+- [x] Tighten README and BUILD guidance around live databases, WAL mode, and other operational caveats
+- [x] Define what the next release-quality support bar actually is (`0.1.x` polish vs `0.2.0` scope)
+- [x] Decide whether platform-specific smoke tests need minimal fixture databases for launch-and-open scenarios
 
 Exit criteria:
-- [ ] Installation expectations are documented from actual verification, not assumption
-- [ ] CI covers the platforms most likely to matter for a desktop SQLite tool
-- [ ] The project can describe its release posture without hand-waving
+- [x] Installation expectations are documented from actual verification, not assumption
+- [x] CI covers the platforms most likely to matter for a desktop SQLite tool
+- [x] The project can describe its release posture without hand-waving
 
 ---
 
@@ -631,6 +636,21 @@ Large-table diffing stays single-threaded at the table level. The streaming merg
 
 `SnapshotStore` continues opening a fresh SQLite connection for each operation rather than holding a persistent connection. The snapshot metadata database is tiny and accessed infrequently; a persistent connection would add lifetime complexity without measurable benefit. Revisit only if contention evidence appears.
 
+### decision-0016: Cargo install is the distribution story for now
+**Date:** 2026-03-24
+
+Desktop packaging (DMG, AppImage, etc.) is deferred. `cargo install patchworks` and `cargo install --path .` are both verified working. The project does not yet have enough users or enough platform-specific behavior to justify installer automation. Revisit when the user base or platform requirements make Cargo install insufficient.
+
+### decision-0017: CI covers Linux and macOS
+**Date:** 2026-03-24
+
+CI now runs the full quality gate on both `ubuntu-latest` and `macos-latest`. This is a native desktop tool with an egui/eframe GUI and platform-specific windowing — macOS coverage is essential. Windows CI is deferred until demand or a contributor appears.
+
+### decision-0018: Platform-specific GUI smoke tests are deferred
+**Date:** 2026-03-24
+
+Platform-specific launch-and-open smoke tests with fixture databases are not worth the complexity yet. The headless CLI tests already exercise the full backend truth layer. GUI smoke tests would require either headless rendering or manual verification, neither of which scales in CI. Revisit if platform-specific rendering bugs become a pattern.
+
 ### decision-0015: CLI shares the GUI's backend truth layer
 **Date:** 2026-03-24
 
@@ -645,7 +665,7 @@ Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `wr
 - Background inspection, table loading, and diff execution report coarse staged progress but do not support cooperative interruption or a user-facing cancel control
 - The GUI preview path (`export_diff_as_sql`) still collects full export into a `String`; very large migrations displayed in-UI may use significant memory even though the file-export path (`write_export`) streams
 - Live databases, WAL-backed databases, encrypted databases, and actively changing sources are handled on a best-effort basis with read-only access; concurrent writes during inspection can produce inconsistent results
-- CI is currently Linux-only even though this is a desktop app and macOS users likely matter
+- CI covers Linux and macOS but not Windows
 - Snapshot matching depends on canonicalized paths and can behave awkwardly if files move
 - Row-level diff results are still fully materialized in memory; very large diffs with millions of changed rows could exhaust memory before export begins
 
@@ -663,7 +683,7 @@ Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `wr
 
 | Question | Phase | Impact |
 |----------|-------|--------|
-| Is the next release-quality support bar Cargo install only, or does the project need desktop packaging? | 5 | Distribution |
+| Should the project add desktop packaging (DMG, AppImage) beyond Cargo install for broader reach? | 6 | Distribution |
 | Should the first CLI ship human-readable output only, or stabilize JSON/JSONL immediately? | 4, 11 | Automation contract |
 | Should the plugin system use compiled Rust dynamic libraries, WASM, or both? | 9 | Architecture |
 | Should three-way merge be a core feature or a plugin? | 7, 9 | Scope |
@@ -678,12 +698,10 @@ Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `wr
 
 If somebody picks this repo up for the next substantive pass, the most credible sequence is:
 
-1. **Raise Phase 5 confidence**
-   - macOS CI smoke path and install verification are high leverage.
-   - Decide whether the project needs release archives, installers, or desktop packaging beyond Cargo install.
-2. **Begin Phase 6 polish work**
+1. **Begin Phase 6 polish work**
    - UX refinements, keyboard shortcuts, theme support, search/filter.
-3. **Only then widen into intelligence or migration workflow work**
+   - Decide whether views should gain diff/export support.
+2. **Only then widen into intelligence or migration workflow work**
    - Advanced diff features and migration chains should compound on a trustworthy and polished core.
 
 If priorities change, replace this list with the new order rather than letting stale direction linger.
@@ -739,6 +757,9 @@ If priorities change, replace this list with the new order rather than letting s
 - 2026-03-24: Large-table diffing stays single-threaded at the table level - the streaming merge is I/O-bound against SQLite reads and parallelizing across tables would add ordering and progress-reporting complexity without clear throughput gains - revisit only with profiling evidence of CPU-bound bottlenecks.
 - 2026-03-24: SnapshotStore keeps per-operation connections rather than a persistent connection - the snapshot metadata database is tiny and accessed infrequently - a persistent connection would add lifetime complexity without measurable benefit.
 - 2026-03-24: Headless CLI subcommands reuse the same backend functions as the GUI rather than implementing separate comparison or export logic - this eliminates the risk of CLI/GUI divergence - integration tests explicitly verify parity between the two surfaces.
+- 2026-03-24: Cargo install is the distribution story for now - desktop packaging (DMG, AppImage) is deferred until user demand justifies installer automation - both `cargo install --path .` and `cargo install patchworks` are verified working on macOS arm64.
+- 2026-03-24: CI now covers both Linux and macOS via a build matrix - Windows CI is deferred until demand or a contributor appears.
+- 2026-03-24: Platform-specific GUI smoke tests are deferred - the headless CLI tests exercise the full backend truth layer and GUI smoke tests would require headless rendering or manual verification - revisit if platform-specific rendering bugs become a pattern.
 
 ### 2026-03-24 (Phase 3 completion)
 
@@ -747,6 +768,10 @@ If priorities change, replace this list with the new order rather than letting s
 ### 2026-03-24 (Phase 4 completion — v0.2.0 release)
 
 - Implemented the full Phase 4 headless CLI surface: `patchworks inspect`, `patchworks diff`, `patchworks export`, and `patchworks snapshot save/list/delete`. All CLI commands share the same backend truth layer as the GUI — `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` are called directly, not forked. Added `--format human|json` on inspect, diff, and snapshot list. Added `-o/--output` on export for file output. Defined exit code conventions: 0 = success/no differences, 1 = error, 2 = differences found. Added `src/cli.rs` with 7 unit tests and `tests/cli_tests.rs` with 18 integration tests including CLI/GUI parity proofs. Restructured `main.rs` from flat args to clap subcommands while preserving backward compatibility (`--snapshot <db>` and bare file arguments still work). Added `list_all_snapshots()` and `delete_snapshot()` to `SnapshotStore`. Added `Json` variant to `PatchworksError` for structured output support. Verified with: `cargo build`, `cargo test` (58 tests), `cargo nextest run` (58 passed), `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo bench --no-run`, `cargo deny check`, `cargo run -- --help`. Published as v0.2.0 to crates.io. Next: Phase 5 platform confidence and Phase 6 product polish.
+
+### 2026-03-24 (Phase 5 completion — v0.3.0 release)
+
+- Completed Phase 5: packaging, platform confidence, and release discipline. Verified both `cargo install --path .` and `cargo install patchworks` (from crates.io) on macOS arm64 — both install successfully, binary launches, `--help` and `--version` produce correct output. Added macOS CI build smoke path alongside Linux in `.github/workflows/ci.yml` using a build matrix. Tightened README with dedicated "Operational guidance" section covering live/WAL-mode databases and large database handling. Recorded three decisions: Cargo install is sufficient for now (decision-0016), CI covers Linux + macOS (decision-0017), platform-specific GUI smoke tests are deferred (decision-0018). Normalized git remote to dual-push SSH (GitHub + Codeberg). Verified with: `cargo build`, `cargo test` (58 tests), `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --all --check`, `cargo bench --no-run`, `cargo deny check`, `cargo install --path .`, `cargo install patchworks`. Published as v0.3.0 to crates.io. Next: Phase 6 product polish.
 
 ---
 
