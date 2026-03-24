@@ -13,7 +13,10 @@ use crate::db::inspector::{inspect_database, read_table_page_for_table};
 use crate::db::snapshot::SnapshotStore;
 use crate::db::types::{Snapshot, TableInfo, TablePage};
 use crate::error::{PatchworksError, Result};
-use crate::state::workspace::{DatabasePaneState, ProgressState, WorkspaceState, WorkspaceView};
+use crate::state::recent;
+use crate::state::workspace::{
+    DatabasePaneState, ProgressState, ThemePreference, WorkspaceState, WorkspaceView,
+};
 use crate::ui;
 
 /// Startup options derived from CLI arguments.
@@ -48,6 +51,7 @@ impl PatchworksApp {
             running_right_table_load: None,
             running_diff: None,
         };
+        app.workspace.recent_files = recent::load_recent_files();
         if let Some(path) = startup.left {
             app.load_left(path)?;
         }
@@ -59,6 +63,8 @@ impl PatchworksApp {
     }
 
     fn load_left(&mut self, path: PathBuf) -> Result<()> {
+        recent::push_recent_file(&path);
+        self.workspace.recent_files = recent::load_recent_files();
         self.start_pane_load(PaneSide::Left, path.clone());
         self.clear_diff_state();
         self.workspace.status_message = Some(format!("Loading {}...", path.display()));
@@ -66,6 +72,8 @@ impl PatchworksApp {
     }
 
     fn load_right(&mut self, path: PathBuf) -> Result<()> {
+        recent::push_recent_file(&path);
+        self.workspace.recent_files = recent::load_recent_files();
         self.start_pane_load(PaneSide::Right, path.clone());
         self.clear_diff_state();
         self.workspace.status_message = Some(format!("Loading {}...", path.display()));
@@ -536,8 +544,53 @@ impl PatchworksApp {
                 }
             }
         }
+
+        // Recent files menu
+        if !self.workspace.recent_files.is_empty() {
+            ui.menu_button("Recent", |ui| {
+                let mut load_left = None;
+                let mut load_right = None;
+                for path in &self.workspace.recent_files {
+                    let label = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("(unknown)")
+                        .to_owned();
+                    ui.horizontal(|ui| {
+                        if ui.small_button("L").on_hover_text("Open as Left").clicked() {
+                            load_left = Some(path.clone());
+                        }
+                        if ui
+                            .small_button("R")
+                            .on_hover_text("Open as Right")
+                            .clicked()
+                        {
+                            load_right = Some(path.clone());
+                        }
+                        ui.label(&label).on_hover_text(path.display().to_string());
+                    });
+                }
+                if let Some(path) = load_left {
+                    ui.close();
+                    if let Err(error) = self.load_left(path) {
+                        self.workspace.status_message =
+                            Some(format!("Failed to load database: {error}"));
+                    }
+                }
+                if let Some(path) = load_right {
+                    ui.close();
+                    if let Err(error) = self.load_right(path) {
+                        self.workspace.status_message =
+                            Some(format!("Failed to load database: {error}"));
+                    }
+                }
+            });
+        }
+
+        ui.separator();
         if ui
             .add_enabled(!self.workspace.diff.is_computing, egui::Button::new("Diff"))
+            .on_hover_text("Compare loaded databases (⌘D)")
             .clicked()
         {
             self.request_diff();
@@ -546,13 +599,31 @@ impl PatchworksApp {
             ui.add(egui::Spinner::new());
         }
         ui.separator();
-        ui.label("Snapshot name:");
+        ui.label("Snapshot:");
         ui.text_edit_singleline(&mut self.workspace.snapshot_name);
-        if ui.button("Save Snapshot").clicked() {
+        if ui
+            .button("Save")
+            .on_hover_text("Save snapshot of left database")
+            .clicked()
+        {
             self.save_snapshot();
         }
         ui.separator();
         ui::workspace::render_view_switcher(ui, &mut self.workspace.active_view);
+        ui.separator();
+        // Theme switcher
+        egui::ComboBox::from_id_salt("theme-combo")
+            .selected_text(match self.workspace.theme {
+                ThemePreference::System => "System",
+                ThemePreference::Dark => "Dark",
+                ThemePreference::Light => "Light",
+            })
+            .width(60.0)
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.workspace.theme, ThemePreference::System, "System");
+                ui.selectable_value(&mut self.workspace.theme, ThemePreference::Dark, "Dark");
+                ui.selectable_value(&mut self.workspace.theme, ThemePreference::Light, "Light");
+            });
     }
 
     fn pane(&self, side: PaneSide) -> &DatabasePaneState {
@@ -618,6 +689,39 @@ impl PatchworksApp {
 
 impl eframe::App for PatchworksApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Apply theme preference
+        match self.workspace.theme {
+            ThemePreference::Dark => ctx.set_visuals(egui::Visuals::dark()),
+            ThemePreference::Light => ctx.set_visuals(egui::Visuals::light()),
+            ThemePreference::System => {
+                // egui defaults to dark; respect platform hint when available
+            }
+        }
+
+        // Keyboard shortcuts
+        let modifiers = egui::Modifiers::COMMAND;
+        if ctx.input(|i| i.key_pressed(egui::Key::D) && i.modifiers.matches_exact(modifiers)) {
+            self.request_diff();
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Num1) && i.modifiers.matches_exact(modifiers)) {
+            self.workspace.active_view = WorkspaceView::Table;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Num2) && i.modifiers.matches_exact(modifiers)) {
+            self.workspace.active_view = WorkspaceView::SchemaBrowser;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Num3) && i.modifiers.matches_exact(modifiers)) {
+            self.workspace.active_view = WorkspaceView::Diff;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Num4) && i.modifiers.matches_exact(modifiers)) {
+            self.workspace.active_view = WorkspaceView::SchemaDiff;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Num5) && i.modifiers.matches_exact(modifiers)) {
+            self.workspace.active_view = WorkspaceView::Snapshots;
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::Num6) && i.modifiers.matches_exact(modifiers)) {
+            self.workspace.active_view = WorkspaceView::SqlExport;
+        }
+
         self.poll_background_work(ctx);
 
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
@@ -625,9 +729,14 @@ impl eframe::App for PatchworksApp {
         });
 
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            if let Some(status) = &self.workspace.status_message {
-                ui.label(status);
-            }
+            ui.horizontal(|ui| {
+                if let Some(status) = &self.workspace.status_message {
+                    ui.label(status);
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new("⌘1-6: views  ⌘D: diff").small().weak());
+                });
+            });
         });
 
         egui::SidePanel::left("left-panel")
@@ -658,6 +767,11 @@ impl eframe::App for PatchworksApp {
                         self.request_table_refresh(PaneSide::Right);
                     }
                 });
+            }
+            WorkspaceView::SchemaBrowser => {
+                let left_summary = self.workspace.left.summary.as_ref();
+                let right_summary = self.workspace.right.summary.as_ref();
+                ui::schema_browser::render_schema_browser(ui, left_summary, right_summary);
             }
             WorkspaceView::Diff => {
                 ui::diff_view::render_diff_view(ui, &mut self.workspace.diff);

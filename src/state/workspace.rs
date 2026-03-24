@@ -10,6 +10,8 @@ use crate::db::types::{DatabaseSummary, Snapshot, TablePage, TableQuery};
 pub enum WorkspaceView {
     /// Inspect a selected table.
     Table,
+    /// Browse full schema DDL (tables, views, indexes, triggers).
+    SchemaBrowser,
     /// Show row-level diffs.
     Diff,
     /// Show schema changes.
@@ -18,6 +20,17 @@ pub enum WorkspaceView {
     Snapshots,
     /// Show SQL export text.
     SqlExport,
+}
+
+/// User theme preference.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThemePreference {
+    /// Follow the operating system setting.
+    System,
+    /// Always use the dark theme.
+    Dark,
+    /// Always use the light theme.
+    Light,
 }
 
 /// Rendering style for diff results.
@@ -100,6 +113,8 @@ pub struct DatabasePaneState {
     pub snapshots: Vec<Snapshot>,
     /// Last visible error for this pane.
     pub error: Option<String>,
+    /// Filter text for the table list in the file panel.
+    pub table_filter: String,
 }
 
 /// State for the active diff result.
@@ -147,6 +162,10 @@ pub struct WorkspaceState {
     pub snapshot_name: String,
     /// Last status line message.
     pub status_message: Option<String>,
+    /// User theme preference.
+    pub theme: ThemePreference,
+    /// Recently opened database file paths (most recent first).
+    pub recent_files: Vec<PathBuf>,
 }
 
 impl Default for WorkspaceState {
@@ -158,6 +177,8 @@ impl Default for WorkspaceState {
             diff: DiffState::default(),
             snapshot_name: "Snapshot".to_owned(),
             status_message: None,
+            theme: ThemePreference::System,
+            recent_files: Vec::new(),
         }
     }
 }

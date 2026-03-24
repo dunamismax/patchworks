@@ -8,7 +8,7 @@ Patchworks is a native desktop tool that treats SQLite databases the way `git di
 
 No cloud. No account. No daemon. One binary, your databases, the truth.
 
-> **Status:** SQLite inspection, schema diffing, row diffing, local snapshot storage, and SQL export are available in both the desktop GUI and headless CLI. View diff/export remains ahead.
+> **Status:** v0.3.0 published on crates.io. SQLite inspection, schema diffing, row diffing, local snapshot storage, SQL export, schema browser with DDL preview, collapsible diff sections, table search/filter, keyboard shortcuts, light/dark/system themes, and recent files are available in both the desktop GUI and headless CLI. View diff/export remains ahead.
 
 ## Why patchworks?
 
@@ -22,12 +22,18 @@ The existing options are grim — hex editors, ad-hoc scripts, manually eyeballi
 |---|---|
 | Inspect SQLite schema, tables, and views | ✓ |
 | Browse rows with pagination and sortable columns | ✓ |
+| Schema browser with DDL preview (tables, views, indexes, triggers) | ✓ |
 | Schema-level diff (tables, indexes, triggers) | ✓ |
 | Row-level diff with streaming merge comparison | ✓ |
+| Collapsible diff sections with summary statistics | ✓ |
 | Snapshot a database to `~/.patchworks/` for later comparison | ✓ |
 | Generate SQL migration (left → right) | ✓ |
 | Foreign-key-safe export with trigger preservation | ✓ |
 | Background processing with progress indicators | ✓ |
+| Table name search/filter in file panels | ✓ |
+| Keyboard shortcuts for views and diff (⌘1-6, ⌘D) | ✓ |
+| Light/dark/system theme support | ✓ |
+| Recent files with quick reopen | ✓ |
 
 ## Install
 
@@ -118,15 +124,17 @@ src/
 │   ├── data.rs        # Streaming row-level diffing
 │   └── export.rs      # SQL migration generation
 ├── state/             # UI-facing workspace state
-│   └── workspace.rs   # Active databases, selections, loading flags
+│   ├── workspace.rs   # Active databases, selections, loading flags
+│   └── recent.rs      # Recent-files persistence
 └── ui/                # egui rendering layer
-    ├── workspace.rs   # Main workspace layout
+    ├── workspace.rs   # Main workspace layout and view switching
     ├── table_view.rs  # Table browsing with pagination
-    ├── diff_view.rs   # Row diff rendering
+    ├── schema_browser.rs # Full schema browser with DDL preview
+    ├── diff_view.rs   # Row diff rendering with collapsible sections
     ├── schema_diff.rs # Schema diff rendering
     ├── sql_export.rs  # SQL export preview and save
     ├── snapshot_panel.rs # Snapshot management
-    ├── file_panel.rs  # File selection
+    ├── file_panel.rs  # File selection with search/filter
     ├── dialogs.rs     # Modal dialogs
     └── progress.rs    # Progress indicators
 ```

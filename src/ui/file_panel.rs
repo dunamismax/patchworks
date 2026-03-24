@@ -11,7 +11,12 @@ pub fn render_file_panel(ui: &mut Ui, title: &str, pane: &mut DatabasePaneState)
     ui.heading(title);
 
     if let Some(path) = &pane.path {
-        ui.label(path.display().to_string());
+        let display = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(&path.display().to_string())
+            .to_owned();
+        ui.label(&display).on_hover_text(path.display().to_string());
     } else {
         ui.label(RichText::new("No database loaded").italics());
     }
@@ -26,14 +31,29 @@ pub fn render_file_panel(ui: &mut Ui, title: &str, pane: &mut DatabasePaneState)
 
     if let Some(summary) = &pane.summary {
         ui.separator();
-        ui.label(format!(
-            "{} tables, {} views",
+        let stats = format!(
+            "{} tables, {} views, {} indexes, {} triggers",
             summary.tables.len(),
-            summary.views.len()
-        ));
+            summary.views.len(),
+            summary.indexes.len(),
+            summary.triggers.len(),
+        );
+        ui.label(stats);
         ui.separator();
+
+        // Table filter
+        ui.horizontal(|ui| {
+            ui.label("🔍");
+            ui.text_edit_singleline(&mut pane.table_filter)
+                .on_hover_text("Filter tables by name");
+        });
+
         ui.label(RichText::new("Tables").strong());
+        let filter = pane.table_filter.to_lowercase();
         for table in &summary.tables {
+            if !filter.is_empty() && !table.name.to_lowercase().contains(&filter) {
+                continue;
+            }
             let is_selected = pane.selected_table.as_deref() == Some(table.name.as_str());
             if ui
                 .selectable_label(is_selected, format!("{} ({})", table.name, table.row_count))

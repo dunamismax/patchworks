@@ -4,6 +4,31 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 
 ## [Unreleased]
 
+### Added
+- **Schema browser panel** — dedicated view to browse all tables, views, indexes, and triggers with full DDL preview (⌘2)
+- **Table search/filter** — type-ahead filter in file panels to quickly find tables by name
+- **Keyboard shortcuts** — ⌘1-6 to switch views, ⌘D to trigger diff
+- **Theme support** — dark, light, or system-following theme selector in the toolbar
+- **Recent files** — recently opened databases are remembered across sessions with quick L/R reopen from a toolbar menu
+- **Collapsible diff sections** — removed, added, and modified rows are now grouped under collapsible headers with row counts
+- **Diff summary bar** — aggregate change statistics across all tables shown at the top of the diff view
+- **Per-table change indicators** — table selector in diff view now shows +/-/~ counts per table
+- **Schema diff summary bar** — index and trigger changes are now surfaced in the schema diff view with a summary header
+- **Improved file panel** — shows filename (with full-path tooltip), index and trigger counts alongside table/view counts
+- **SQL export polish** — read-only preview, line/statement counts, icon-labeled buttons
+- `src/ui/schema_browser.rs` — new schema browser UI module
+- `src/state/recent.rs` — recent-files persistence module
+
+### Changed
+- View switcher reordered: Table → Schema → Diff → Schema Diff → Snapshots → SQL Export
+- Schema diff unchanged tables now collapsed by default
+- Status bar shows keyboard shortcut hints
+- SQL export preview is now non-interactive (read-only)
+
+### Decisions
+- Views remain inspect-only; diff/export support deferred (decision-0004 reaffirmed)
+- Indexes and triggers are browsable in the schema browser; dedicated diff UI panels deferred in favor of the existing schema diff view
+
 ## [0.3.0] - 2026-03-24
 
 ### Added

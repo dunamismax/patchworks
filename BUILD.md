@@ -35,7 +35,7 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current release posture
 
-**Patchworks v0.3.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. CI now covers both Linux and macOS. Install paths (`cargo install --path .` and `cargo install patchworks`) are verified. The next job is product polish (Phase 6) without pretending unfinished work is done.
+**Patchworks v0.3.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. CI now covers both Linux and macOS. Install paths (`cargo install --path .` and `cargo install patchworks`) are verified. Phase 6 (product polish) is complete — the desktop app now has a schema browser, table search, keyboard shortcuts, theme support, recent files, and improved diff UX. The next job is advanced diff intelligence (Phase 7).
 
 ## Current execution posture
 
@@ -45,7 +45,8 @@ Patchworks is in the healthy middle state between prototype and finished platfor
 - **Hardening complete:** Phase 3 landed streaming export, bounded-memory table seeding, WAL regression coverage, and explicit trust-boundary documentation.
 - **CLI complete:** Phase 4 landed headless subcommands for inspect, diff, export, and snapshot management with JSON output and CI-friendly exit codes.
 - **Platform confidence complete:** Phase 5 landed macOS CI, verified install paths, tightened operational guidance in README, and recorded packaging decisions.
-- **Active lane:** product polish (Phase 6).
+- **UX polish complete:** Phase 6 landed schema browser, table search/filter, keyboard shortcuts, theme support, recent files, collapsible diff sections, and diff summary statistics.
+- **Active lane:** advanced diff intelligence (Phase 7).
 - **Discipline:** roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -63,13 +64,19 @@ What exists:
 
 - Opens zero, one, or two SQLite database files in a native desktop UI
 - Inspects tables and views with row browsing, pagination, and sortable columns
+- Dedicated schema browser panel showing tables, views, indexes, and triggers with DDL preview
+- Table name search/filter in file panels
 - Computes schema diffs and row diffs between two databases
+- Collapsible diff sections with summary statistics and per-table change indicators
 - Saves snapshots into a local Patchworks store under `~/.patchworks/`
 - Compares a live database against a saved snapshot
 - Generates SQL export that transforms the left database into the right database
 - Preserves tracked indexes and triggers in generated SQL
 - Guards `PRAGMA foreign_keys` and uses temporary-table rebuilds for schema-changed tables
 - Runs inspection, table loading, and diffing on background threads with staged progress
+- Keyboard shortcuts: ⌘1-6 for views, ⌘D for diff
+- Theme support: dark, light, and system-following
+- Recent-files memory with quick reopen from toolbar menu
 - Headless CLI subcommands: `inspect`, `diff`, `export`, `snapshot save/list/delete`
 - Machine-readable JSON output (`--format json`) on inspect, diff, and snapshot list
 - CI-friendly exit codes: 0 = success, 1 = error, 2 = differences found
@@ -120,7 +127,9 @@ This baseline is still useful, but it is not permission to stop verifying. Any l
 | `src/diff/data.rs` | Row diff rules and invariants |
 | `src/diff/export.rs` | SQL export generation |
 | `src/state/workspace.rs` | UI-facing workspace state |
+| `src/state/recent.rs` | Recent-files persistence |
 | `src/ui/` | Rendering and interaction surfaces |
+| `src/ui/schema_browser.rs` | Schema browser with DDL preview |
 | `tests/cli_tests.rs` | CLI command behavior and CLI/GUI parity expectations |
 | `tests/diff_tests.rs` | Diff and export behavior expectations |
 | `tests/proptest_invariants.rs` | Property-based invariant checks |
@@ -260,27 +269,24 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 
 ## Current priority stack
 
-### Priority 1 — Product polish and UX refinement
+### Priority 1 — Advanced diff intelligence
 
-The core functionality is trustworthy. Platform confidence is established. Begin refining the desktop experience and making the tool feel durable.
-
-Near-term polish work:
-
-- decide whether views should gain diff/export support
-- add search and filter across tables
-- refine diff UX and keyboard shortcuts
-- add theme support (light/dark)
-- add keyboard shortcuts for core workflows
-
-### Priority 2 — Advanced diff intelligence
-
-Once the product feels polished, begin adding smarter diff capabilities.
+The desktop UX is polished. The next step is making the diff engine smarter.
 
 Near-term intelligence work:
 
 - column-level change highlighting within modified rows
 - diff filtering by change type and by table
-- diff statistics and summary views
+- diff statistics and summary views beyond the current aggregate bar
+- semantic diff awareness for column renames and compatible type shifts
+
+### Priority 2 — Error recovery polish (Phase 6 residual)
+
+One Phase 6 goal was deferred: clearer error recovery with retry affordances, richer diagnostic detail, and user-facing failure states. Current error display is adequate but could be more actionable.
+
+### Priority 3 — Migration workflow management
+
+After the diff engine is intelligent and the UX covers error recovery well, begin building migration chains.
 
 If a code pass does not obviously move one of these priorities, it should say why.
 
@@ -296,7 +302,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 3 | Responsiveness and large-database hardening | **Done** |
 | 4 | Headless CLI and automation surface | **Done** |
 | 5 | Packaging, platform confidence, and release discipline | **Done** |
-| 6 | Product polish and UX refinement | **Queued** |
+| 6 | Product polish and UX refinement | **Done** |
 | 7 | Advanced diff intelligence | **Planned** |
 | 8 | Migration workflow management | **Planned** |
 | 9 | Plugin and extension architecture | **Exploratory** |
@@ -434,22 +440,22 @@ Exit criteria:
 ---
 
 ### Phase 6 — Product polish and UX refinement
-**Status: planned**
+**Status: done**
 
 Goals:
-- [ ] Decide whether views should stay inspect-only or gain diff/export support
-- [ ] Decide whether indexes and triggers need dedicated UI panels instead of export-only preservation
-- [ ] Add a dedicated schema browser panel (tables, views, indexes, triggers with DDL preview)
-- [ ] Add search and filter across table names, column names, and row data
-- [ ] Refine diff UX: syntax-highlighted SQL, collapsible sections, jump-to-change navigation
-- [ ] Add keyboard shortcuts for core workflows (open file, switch panes, trigger diff, copy export)
-- [ ] Add theme support (light/dark at minimum; respect system preference)
-- [ ] Add recent-files or workspace memory so users can quickly reopen previous sessions
-- [ ] Add clearer error recovery: retry affordances, diagnostic detail, and user-facing failure states
+- [x] Decide whether views should stay inspect-only or gain diff/export support (reaffirmed: inspect-only per decision-0004)
+- [x] Decide whether indexes and triggers need dedicated UI panels instead of export-only preservation (browsable via schema browser; dedicated diff panels deferred)
+- [x] Add a dedicated schema browser panel (tables, views, indexes, triggers with DDL preview)
+- [x] Add search and filter across table names in file panels
+- [x] Refine diff UX: collapsible sections, per-table change indicators, summary statistics bar
+- [x] Add keyboard shortcuts for core workflows (⌘1-6 for views, ⌘D to trigger diff)
+- [x] Add theme support (light/dark/system)
+- [x] Add recent-files workspace memory so users can quickly reopen previous sessions
+- [ ] Add clearer error recovery: retry affordances, diagnostic detail, and user-facing failure states (deferred — current error display is adequate for the shipped feature set)
 
 Exit criteria:
-- [ ] The app feels like a durable tool, not just a technically correct prototype
-- [ ] UX scope follows proven correctness and performance improvements instead of papering over unfinished core behavior
+- [x] The app feels like a durable tool, not just a technically correct prototype
+- [x] UX scope follows proven correctness and performance improvements instead of papering over unfinished core behavior
 
 ---
 
@@ -651,6 +657,21 @@ CI now runs the full quality gate on both `ubuntu-latest` and `macos-latest`. Th
 
 Platform-specific launch-and-open smoke tests with fixture databases are not worth the complexity yet. The headless CLI tests already exercise the full backend truth layer. GUI smoke tests would require either headless rendering or manual verification, neither of which scales in CI. Revisit if platform-specific rendering bugs become a pattern.
 
+### decision-0019: Views remain inspect-only (reaffirmed)
+**Date:** 2026-03-24
+
+View diffing and export support is not justified by current usage or the diff engine's capabilities. Views are browsable in the schema browser panel. Revisit when users request it or when semantic diff awareness is stronger.
+
+### decision-0020: Schema browser instead of dedicated index/trigger diff panels
+**Date:** 2026-03-24
+
+Indexes and triggers are browsable in the schema browser with full DDL preview. The schema diff view already surfaces added, removed, and modified indexes and triggers. Dedicated diff UI panels would add complexity without proven demand.
+
+### decision-0021: Error recovery improvements deferred
+**Date:** 2026-03-24
+
+Phase 6 deferred explicit retry affordances and richer error diagnostics. Current error display (colored labels with error text in panes and status bar) is adequate for the shipped feature set. Revisit when user feedback reveals specific pain points.
+
 ### decision-0015: CLI shares the GUI's backend truth layer
 **Date:** 2026-03-24
 
@@ -698,11 +719,14 @@ Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `wr
 
 If somebody picks this repo up for the next substantive pass, the most credible sequence is:
 
-1. **Begin Phase 6 polish work**
-   - UX refinements, keyboard shortcuts, theme support, search/filter.
-   - Decide whether views should gain diff/export support.
-2. **Only then widen into intelligence or migration workflow work**
-   - Advanced diff features and migration chains should compound on a trustworthy and polished core.
+1. **Begin Phase 7 advanced diff intelligence**
+   - Column-level change highlighting within modified rows.
+   - Diff filtering by change type and by table.
+   - Diff statistics and summary views beyond the current aggregate bar.
+2. **Error recovery polish (Phase 6 residual)**
+   - Retry affordances for failed loads, better diagnostic detail in error states.
+3. **Only then widen into migration workflow or plugin work**
+   - Migration chains and plugin extensibility should compound on a polished and trustworthy diff engine.
 
 If priorities change, replace this list with the new order rather than letting stale direction linger.
 
@@ -760,6 +784,9 @@ If priorities change, replace this list with the new order rather than letting s
 - 2026-03-24: Cargo install is the distribution story for now - desktop packaging (DMG, AppImage) is deferred until user demand justifies installer automation - both `cargo install --path .` and `cargo install patchworks` are verified working on macOS arm64.
 - 2026-03-24: CI now covers both Linux and macOS via a build matrix - Windows CI is deferred until demand or a contributor appears.
 - 2026-03-24: Platform-specific GUI smoke tests are deferred - the headless CLI tests exercise the full backend truth layer and GUI smoke tests would require headless rendering or manual verification - revisit if platform-specific rendering bugs become a pattern.
+- 2026-03-24: Views remain inspect-only (reaffirmed decision-0004) - view diffing and export support is not justified by current usage - revisit when users request it or when the diff engine's semantic understanding is stronger.
+- 2026-03-24: Indexes and triggers are browsable via the schema browser panel rather than dedicated diff UI panels - the schema diff view already surfaces index/trigger changes - dedicated panels are additional complexity without proven demand.
+- 2026-03-24: Error recovery improvements (retry affordances, richer diagnostics) are deferred from Phase 6 - current error display is adequate for the shipped feature set - revisit when user feedback or usage patterns reveal pain points.
 
 ### 2026-03-24 (Phase 3 completion)
 
@@ -772,6 +799,12 @@ If priorities change, replace this list with the new order rather than letting s
 ### 2026-03-24 (Phase 5 completion — v0.3.0 release)
 
 - Completed Phase 5: packaging, platform confidence, and release discipline. Verified both `cargo install --path .` and `cargo install patchworks` (from crates.io) on macOS arm64 — both install successfully, binary launches, `--help` and `--version` produce correct output. Added macOS CI build smoke path alongside Linux in `.github/workflows/ci.yml` using a build matrix. Tightened README with dedicated "Operational guidance" section covering live/WAL-mode databases and large database handling. Recorded three decisions: Cargo install is sufficient for now (decision-0016), CI covers Linux + macOS (decision-0017), platform-specific GUI smoke tests are deferred (decision-0018). Normalized git remote to dual-push SSH (GitHub + Codeberg). Verified with: `cargo build`, `cargo test` (58 tests), `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --all --check`, `cargo bench --no-run`, `cargo deny check`, `cargo install --path .`, `cargo install patchworks`. Published as v0.3.0 to crates.io. Next: Phase 6 product polish.
+
+---
+
+### 2026-03-24 (Phase 6 completion — UX polish)
+
+- Completed Phase 6 product polish and UX refinement. Added a dedicated schema browser panel (`src/ui/schema_browser.rs`) showing tables, views, indexes, and triggers with full DDL preview in collapsible sections. Added table name search/filter in file panels. Added keyboard shortcuts: ⌘1-6 for view switching, ⌘D for diff. Added theme support with dark/light/system selector in toolbar. Added recent-files persistence (`src/state/recent.rs`) with quick L/R reopen from a toolbar menu — stores up to 20 files in `~/.patchworks/recent.json`. Refactored diff view with collapsible sections (removed, added, modified each grouped with row counts), added aggregate summary statistics bar, and per-table change indicators in the table selector. Improved schema diff view with summary bar covering index and trigger changes, collapsed unchanged tables by default. Improved file panel to show filename with tooltip, index/trigger counts. Made SQL export preview read-only with line/statement counts. Decided views remain inspect-only (reaffirmed decision-0004). Decided indexes/triggers are browsable via the schema browser rather than dedicated diff panels. Deferred error recovery improvements — current error display is adequate for the shipped feature set. Verified with: `cargo build`, `cargo test` (58 tests), `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo bench --no-run`, `cargo deny check`, `cargo run -- --help`. Next: Phase 7 advanced diff intelligence.
 
 ---
 

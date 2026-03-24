@@ -4,6 +4,7 @@ pub mod dialogs;
 pub mod diff_view;
 pub mod file_panel;
 pub mod progress;
+pub mod schema_browser;
 pub mod schema_diff;
 pub mod snapshot_panel;
 pub mod sql_export;
