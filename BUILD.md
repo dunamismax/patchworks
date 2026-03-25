@@ -35,7 +35,7 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current release posture
 
-**Patchworks v0.3.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. CI now covers both Linux and macOS. Install paths (`cargo install --path .` and `cargo install patchworks`) are verified. Phase 6 (product polish) is complete. Phase 7 (advanced diff intelligence) is complete — the diff engine now includes column-level change highlighting, diff filtering by change type and table, aggregate summary statistics, semantic diff awareness (table renames, column renames, compatible type shifts), three-way merge with conflict detection, diff annotations for triage, and data-type-aware comparison rules. The next job is migration workflow management (Phase 8).
+**Patchworks v0.3.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. CI now covers both Linux and macOS. Install paths (`cargo install --path .` and `cargo install patchworks`) are verified. Phase 6 (product polish) is complete. Phase 7 (advanced diff intelligence) is complete. Phase 8 (migration workflow management) is complete — Patchworks now supports generating, storing, validating, applying, squashing, and conflict-checking ordered migration sequences via the `patchworks migrate` CLI subcommands, with `--dry-run` safety, rollback generation, and JSON output. The next job is plugin and extension architecture (Phase 9).
 
 ## Current execution posture
 
@@ -47,7 +47,8 @@ Patchworks is in the healthy middle state between prototype and finished platfor
 - **Platform confidence complete:** Phase 5 landed macOS CI, verified install paths, tightened operational guidance in README, and recorded packaging decisions.
 - **UX polish complete:** Phase 6 landed schema browser, table search/filter, keyboard shortcuts, theme support, recent files, collapsible diff sections, and diff summary statistics.
 - **Diff intelligence complete:** Phase 7 landed column-level change highlighting, diff filtering, aggregate summary statistics, semantic diff awareness (table/column renames, compatible type shifts), three-way merge with explicit conflict surfacing, diff annotations for triage, and data-type-aware comparison rules.
-- **Active lane:** migration workflow management (Phase 8).
+- **Migration workflow complete:** Phase 8 landed migration chain generation, storage, validation, rollback, squashing, conflict detection, and the `patchworks migrate` CLI subcommand family with `--dry-run` and JSON output.
+- **Active lane:** plugin and extension architecture (Phase 9).
 - **Discipline:** roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -86,15 +87,17 @@ What exists:
 - Conflict surfacing for row conflicts, delete-modify conflicts, schema conflicts, and table-delete conflicts
 - Diff annotations for triage workflows (pending/approved/rejected/needs-discussion/deferred)
 - Data-type-aware comparison rules (integer vs real equivalence, text vs integer for numeric columns)
-- Headless CLI subcommands: `inspect`, `diff`, `export`, `merge`, `snapshot save/list/delete`
-- Machine-readable JSON output (`--format json`) on inspect, diff, merge, and snapshot list
+- Headless CLI subcommands: `inspect`, `diff`, `export`, `merge`, `snapshot save/list/delete`, `migrate generate/validate/list/show/apply/delete/squash/conflicts`
+- Migration chain management: generate, store, validate, apply, squash, and conflict-check ordered migration sequences
+- Rollback generation for reversible migrations
+- `--dry-run` mode for migration generate, apply, and squash operations
+- Machine-readable JSON output (`--format json`) on inspect, diff, merge, snapshot list, and all migrate subcommands
 - CI-friendly exit codes: 0 = success, 1 = error, 2 = differences found
 - File output for exports (`-o/--output`)
 
 What does **not** exist yet:
 
 - View diffing or export support
-- Migration chain management (generate, store, replay ordered sequences)
 - Explicit cancel control for long-running background jobs
 - Formal desktop packaging or installer automation beyond Cargo packaging
 - Strong guarantees for heavily changing live databases or actively-written WAL-backed files (read-only access works, but concurrent writes during inspection can produce inconsistent results)
@@ -105,7 +108,7 @@ What does **not** exist yet:
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
 - Host: macOS arm64 (`Darwin 25.4.0`)
-- Release verification: build, test (99 tests), clippy, fmt, bench-compile, deny, and CLI help were recorded passing
+- Release verification: build, test (126 tests), clippy, fmt, bench-compile, deny, and CLI help were recorded passing
 - Install verification: both `cargo install --path .` and `cargo install patchworks` (from crates.io) recorded passing on macOS arm64
 
 This baseline is still useful, but it is not permission to stop verifying. Any later change that touches product behavior should record its own narrower proof.
@@ -131,6 +134,7 @@ This baseline is still useful, but it is not permission to stop verifying. Any l
 | `src/error.rs` | Shared error model |
 | `src/db/inspector.rs` | SQLite inspection, paging, and summary loading |
 | `src/db/differ.rs` | Diff orchestration and SQL export entrypoints |
+| `src/db/migration.rs` | Migration chain persistence and conflict detection |
 | `src/db/snapshot.rs` | Snapshot persistence and local store behavior |
 | `src/db/types.rs` | Shared database and diff data types |
 | `src/diff/schema.rs` | Schema diff rules |
@@ -138,6 +142,7 @@ This baseline is still useful, but it is not permission to stop verifying. Any l
 | `src/diff/export.rs` | SQL export generation |
 | `src/diff/semantic.rs` | Semantic diff awareness (renames, compatible type shifts) |
 | `src/diff/merge.rs` | Three-way merge and conflict detection |
+| `src/diff/migration.rs` | Migration generation, validation, rollback, and squashing |
 | `src/state/workspace.rs` | UI-facing workspace state |
 | `src/state/recent.rs` | Recent-files persistence |
 | `src/ui/` | Rendering and interaction surfaces |
@@ -145,6 +150,7 @@ This baseline is still useful, but it is not permission to stop verifying. Any l
 | `tests/cli_tests.rs` | CLI command behavior and CLI/GUI parity expectations |
 | `tests/diff_tests.rs` | Diff and export behavior expectations |
 | `tests/phase7_tests.rs` | Phase 7 advanced diff intelligence expectations |
+| `tests/migration_tests.rs` | Phase 8 migration workflow expectations |
 | `tests/proptest_invariants.rs` | Property-based invariant checks |
 | `tests/snapshot_tests.rs` | Snapshot behavior expectations |
 | `benches/diff_hot_paths.rs` | Diff performance tracking |
@@ -232,10 +238,10 @@ Do not record these as passed unless they were actually run in the repo. If a ga
 
 ### Currently recorded verified commands
 
-Re-verified on 2026-03-24 (v0.3.0 release):
+Re-verified on 2026-03-24 (Phase 8 completion):
 
 - `cargo build`
-- `cargo test` (58 tests)
+- `cargo test` (126 tests)
 - `cargo fmt --all --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `cargo bench --no-run`
@@ -262,6 +268,14 @@ Supported by the codebase but not fully re-verified in the recorded passes above
 - `cargo run -- snapshot save <db>`
 - `cargo run -- snapshot list`
 - `cargo run -- snapshot delete <id>`
+- `cargo run -- migrate generate <left> <right>`
+- `cargo run -- migrate validate <id>`
+- `cargo run -- migrate list`
+- `cargo run -- migrate show <id>`
+- `cargo run -- migrate apply <id> <database>`
+- `cargo run -- migrate delete <id>`
+- `cargo run -- migrate squash <source>`
+- `cargo run -- migrate conflicts`
 - `cargo install --path .`
 - `cargo install patchworks`
 
@@ -282,17 +296,17 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 
 ## Current priority stack
 
-### Priority 1 — Migration workflow management
+### Priority 1 — Plugin and extension architecture
 
-The diff engine is now intelligent. The next step is building migration chains (Phase 8).
+Migration workflows are solid. The next step is evaluating the extension surface (Phase 9).
 
 ### Priority 2 — Error recovery polish (Phase 6 residual)
 
 One Phase 6 goal was deferred: clearer error recovery with retry affordances, richer diagnostic detail, and user-facing failure states. Current error display is adequate but could be more actionable.
 
-### Priority 3 — Plugin and extension architecture
+### Priority 3 — CI/CD integration
 
-After migration workflows are solid, evaluate the extension surface.
+After the plugin surface, stabilize CI/CD integration patterns.
 
 If a code pass does not obviously move one of these priorities, it should say why.
 
@@ -310,14 +324,14 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 5 | Packaging, platform confidence, and release discipline | **Done** |
 | 6 | Product polish and UX refinement | **Done** |
 | 7 | Advanced diff intelligence | **Done** |
-| 8 | Migration workflow management | **Planned** |
+| 8 | Migration workflow management | **Done** |
 | 9 | Plugin and extension architecture | **Exploratory** |
 | 10 | Team features and shared snapshot registries | **Exploratory** |
 | 11 | CI/CD integration and automation ecosystem | **Planned** |
 | 12 | Long-term platform evolution | **Exploratory** |
 | 13 | Tauri 2 desktop shell | **Planned** |
 
-Phases 0-7 are the shipped foundation. Phase 8 (migration workflow management) is the next active build step.
+Phases 0-8 are the shipped foundation. Phase 9 (plugin and extension architecture) is the next active build step.
 
 ---
 
@@ -486,22 +500,22 @@ Exit criteria:
 ---
 
 ### Phase 8 — Migration workflow management
-**Status: planned**
+**Status: done**
 
 Goals:
-- [ ] Add migration chain support: generate, store, and replay ordered migration sequences
-- [ ] Add migration validation by applying generated SQL to a copy and verifying the result matches the target
-- [ ] Add rollback generation for reversible migrations where possible
-- [ ] Add migration squashing for sequential migrations
-- [ ] Add migration history tracking in the Patchworks store
-- [ ] Add migration conflict detection when multiple migrations target the same objects
-- [ ] Add a `patchworks migrate` CLI command with safety checks
-- [ ] Add `--dry-run` mode for migration operations
-- [ ] Decide whether custom pre/post migration hooks belong in core or later extensions
+- [x] Add migration chain support: generate, store, and replay ordered migration sequences
+- [x] Add migration validation by applying generated SQL to a copy and verifying the result matches the target
+- [x] Add rollback generation for reversible migrations where possible
+- [x] Add migration squashing for sequential migrations
+- [x] Add migration history tracking in the Patchworks store
+- [x] Add migration conflict detection when multiple migrations target the same objects
+- [x] Add a `patchworks migrate` CLI command with safety checks
+- [x] Add `--dry-run` mode for migration operations
+- [x] Decide whether custom pre/post migration hooks belong in core or later extensions (deferred to Phase 9 plugin system per decision-0025)
 
 Exit criteria:
-- [ ] Users can manage ordered database migrations through Patchworks rather than ad-hoc SQL files alone
-- [ ] Migrations can be validated before application and tracked after application
+- [x] Users can manage ordered database migrations through Patchworks rather than ad-hoc SQL files alone
+- [x] Migrations can be validated before application and tracked after application
 
 ---
 
@@ -721,6 +735,16 @@ Table renames and column renames are detected via column similarity (Jaccard ind
 
 Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` functions as the desktop GUI. No separate comparison or export logic exists for the CLI. Integration tests explicitly verify CLI/GUI parity. This eliminates the risk of behavioral divergence between surfaces.
 
+### decision-0025: Custom migration hooks deferred to plugin system
+**Date:** 2026-03-24
+
+Custom pre/post migration hooks do not belong in the core migration engine. They are a natural fit for the Phase 9 plugin and extension architecture. The migration engine provides the primitives (generate, validate, apply, rollback, squash); hooks and custom logic should compose on top via plugins.
+
+### decision-0026: Migration chain state stored in the Patchworks metadata database
+**Date:** 2026-03-24
+
+Migration metadata lives in the same `~/.patchworks/patchworks.db` SQLite database used by the snapshot store. This keeps all Patchworks state co-located under `~/.patchworks/` and reuses the existing per-operation connection pattern. The `migrations` table stores the full migration SQL alongside metadata, which may be large for very complex migrations but avoids the complexity of external file management for migration SQL. Revisit if migration storage needs separate files for very large migration chains.
+
 ---
 
 ## Risks
@@ -752,7 +776,7 @@ Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `wr
 | Should the first CLI ship human-readable output only, or stabilize JSON/JSONL immediately? | 4, 11 | Automation contract |
 | Should the plugin system use compiled Rust dynamic libraries, WASM, or both? | 9 | Architecture |
 | ~~Should three-way merge be a core feature or a plugin?~~ Core (decision-0022) | 7, 9 | Scope |
-| How should migration chain state be stored? | 8 | Storage architecture |
+| ~~How should migration chain state be stored?~~ In the Patchworks metadata SQLite db (decision-0026) | 8 | Storage architecture |
 | Is multi-engine support worth the abstraction cost? | 12 | Product identity |
 | Should the shared snapshot registry be a separate service or embedded? | 10 | Architecture |
 | Should the GUI preview path move to streaming or lazy rendering for very large exports? | 6 | UX and memory |
@@ -763,14 +787,13 @@ Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `wr
 
 If somebody picks this repo up for the next substantive pass, the most credible sequence is:
 
-1. **Begin Phase 8 migration workflow management**
-   - Migration chain support: generate, store, and replay ordered migration sequences.
-   - Migration validation by applying generated SQL to a copy and verifying the result.
-   - Rollback generation for reversible migrations.
+1. **Begin Phase 9 plugin and extension architecture**
+   - Design plugin surfaces for diff formatters, export targets, and custom validators.
+   - Evaluate discovery/loading mechanisms (dynamic libraries, WASM, or both).
 2. **Error recovery polish (Phase 6 residual)**
    - Retry affordances for failed loads, better diagnostic detail in error states.
-3. **Only then widen into plugin work**
-   - Plugin extensibility should compound on a polished and trustworthy diff + migration engine.
+3. **CI/CD integration (Phase 11)**
+   - `patchworks check` command, GitHub Actions examples, pre-commit hooks.
 
 If priorities change, replace this list with the new order rather than letting stale direction linger.
 
@@ -834,6 +857,8 @@ If priorities change, replace this list with the new order rather than letting s
 - 2026-03-24: Three-way merge is a core feature rather than a plugin - it is a natural extension of the diff engine and critical for team workflows - the `patchworks merge` CLI subcommand and the underlying `diff::merge` module are first-class.
 - 2026-03-24: Semantic diff awareness uses heuristic confidence scores for table and column rename detection - table renames require 70% column overlap, column renames require 60% property match - users should treat detections as suggestions, not assertions.
 - 2026-03-24: `SqlValue` implements `Eq` and `Ord` via bit-level float ordering to support `BTreeMap`-keyed merge data structures - this is a stable deterministic ordering suitable for key matching, not a mathematical ordering.
+- 2026-03-24: Custom pre/post migration hooks are deferred to the Phase 9 plugin system - the core migration engine provides primitives (generate, validate, apply, rollback, squash) and hooks should compose on top via plugins rather than being baked into core.
+- 2026-03-24: Migration chain state is stored in the Patchworks metadata database (`~/.patchworks/patchworks.db`) alongside snapshots - this keeps all Patchworks state co-located and reuses the per-operation connection pattern - the full migration SQL is stored inline in the `migrations` table rather than as separate files.
 
 ### 2026-03-24 (Phase 3 completion)
 
@@ -858,6 +883,12 @@ If priorities change, replace this list with the new order rather than letting s
 ### 2026-03-24 (Phase 7 completion — Advanced diff intelligence)
 
 - Completed Phase 7 advanced diff intelligence. Added column-level change highlighting within modified rows — the diff engine already captured per-cell `CellChange` data, now the GUI renders old→new values with distinct red/green highlighting per column. Added diff filtering by change type (added/removed/modified) and by table — new `DiffFilter` type and `filter_data_diffs` function allow narrowing diff results, with UI checkboxes in the diff view. Added `DiffSummary` aggregate statistics covering table counts, row counts, cell change counts, and schema object counts, displayed in both the CLI and GUI. Added semantic diff awareness via new `src/diff/semantic.rs` module: detects table renames (via column similarity Jaccard scoring), column renames (via type/nullable/pk/default matching), and compatible type shifts (using SQLite's type affinity rules). Added three-way merge support via new `src/diff/merge.rs` module and `patchworks merge <ancestor> <left> <right>` CLI subcommand: diffs both derived databases against the ancestor, merges non-conflicting row and schema changes, and surfaces four conflict types (RowConflict, SchemaConflict, DeleteModifyConflict, TableDeleteConflict). Added diff annotations for triage workflows: `DiffAnnotation` type with `AnnotationStatus` (pending/approved/rejected/needs-discussion/deferred), wired into `DiffState` for the GUI. Added data-type-aware comparison via `values_semantically_equal` which distinguishes cosmetic differences (integer 1 vs real 1.0, text "42" vs integer 42 for numeric columns) from semantic ones based on SQLite type affinity. Added `Ord`/`Eq` implementations for `SqlValue` to support `BTreeMap`-keyed merge data structures. New source files: `src/diff/semantic.rs`, `src/diff/merge.rs`. New test file: `tests/phase7_tests.rs` (25 integration tests). Updated CLI diff output to include column-level detail for modified rows, semantic analysis section, and aggregate summary. Updated GUI diff view with filter controls, semantic changes panel, and column-level old→new highlighting. Verified with: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test` (99 tests), `cargo build`, `cargo build --release`. Next: Phase 8 migration workflow management.
+
+---
+
+### 2026-03-24 (Phase 8 completion — Migration workflow management)
+
+- Completed Phase 8 migration workflow management. Added migration chain persistence via new `src/db/migration.rs` module: `MigrationStore` manages a `migrations` table in the existing `~/.patchworks/patchworks.db` metadata database, supporting ordered sequence numbers, affected-table tracking, validation status, and optional rollback SQL. Added migration generation, validation, rollback, and squashing logic via new `src/diff/migration.rs` module: `generate_up_sql` produces forward migrations using the existing diff+export engine, `generate_down_sql` produces reverse migrations for rollback, `validate_migration` applies SQL to a temporary copy and diffs the result against the target, `validate_rollback` verifies round-trip correctness, `squash_migrations` replays a sequence against a source database and diffs the final state to produce a single migration, and `apply_migration` supports both real application and `--dry-run` mode. Added migration conflict detection: compares affected-table sets across stored migrations to surface overlapping modifications. Added `patchworks migrate` CLI subcommand family with 8 subcommands: `generate` (with `--name`, `--dry-run`, `--format`), `validate`, `list`, `show`, `apply` (with `--dry-run`), `delete`, `squash` (with `--name`, `--dry-run`), and `conflicts`. All subcommands support `--format human|json` where applicable. Added `tempfile` as a runtime dependency for migration validation temporary copies. Added migration types to `src/db/types.rs`: `Migration`, `MigrationChainSummary`, `MigrationValidation`, `MigrationConflict`. New test file: `tests/migration_tests.rs` (27 integration tests) covering generation, validation, rollback, squashing, store CRUD, conflict detection, dry-run behavior, end-to-end workflows, and schema change migrations. Decided custom migration hooks belong in Phase 9 plugin system (decision-0025). Decided migration state is stored in the Patchworks metadata database alongside snapshots (decision-0026). Verified with: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test` (126 tests), `cargo build`, `cargo build --release`. Next: Phase 9 plugin and extension architecture.
 
 ---
 

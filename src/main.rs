@@ -81,6 +81,12 @@ enum Command {
         #[command(subcommand)]
         action: SnapshotAction,
     },
+
+    /// Manage database migrations.
+    Migrate {
+        #[command(subcommand)]
+        action: MigrateAction,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -108,6 +114,93 @@ enum SnapshotAction {
     Delete {
         /// Snapshot UUID to delete.
         id: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum MigrateAction {
+    /// Generate a migration from two databases.
+    Generate {
+        /// Left (source/before) database path.
+        left: PathBuf,
+        /// Right (target/after) database path.
+        right: PathBuf,
+        /// Human-readable name for the migration.
+        #[arg(long)]
+        name: Option<String>,
+        /// Preview without saving.
+        #[arg(long)]
+        dry_run: bool,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Human)]
+        format: Format,
+    },
+
+    /// Validate a stored migration by applying it to a copy.
+    Validate {
+        /// Migration UUID to validate.
+        id: String,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Human)]
+        format: Format,
+    },
+
+    /// List all stored migrations.
+    List {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Human)]
+        format: Format,
+    },
+
+    /// Show details of a specific migration.
+    Show {
+        /// Migration UUID.
+        id: String,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Human)]
+        format: Format,
+    },
+
+    /// Apply a stored migration to a database.
+    Apply {
+        /// Migration UUID to apply.
+        id: String,
+        /// Target database to apply the migration to.
+        database: PathBuf,
+        /// Validate without applying.
+        #[arg(long)]
+        dry_run: bool,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Human)]
+        format: Format,
+    },
+
+    /// Delete a stored migration.
+    Delete {
+        /// Migration UUID to delete.
+        id: String,
+    },
+
+    /// Squash all stored migrations into a single migration.
+    Squash {
+        /// Source database to use as the starting point for replay.
+        source: PathBuf,
+        /// Name for the squashed migration.
+        #[arg(long)]
+        name: Option<String>,
+        /// Preview without saving.
+        #[arg(long)]
+        dry_run: bool,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Human)]
+        format: Format,
+    },
+
+    /// Check for conflicts between stored migrations.
+    Conflicts {
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Human)]
+        format: Format,
     },
 }
 
@@ -203,6 +296,60 @@ fn main() -> anyhow::Result<()> {
                 }
                 SnapshotAction::Delete { id } => {
                     cli::run_snapshot_delete(&mut stdout, &id).context("snapshot delete failed")?
+                }
+            },
+            Command::Migrate { action } => match action {
+                MigrateAction::Generate {
+                    left,
+                    right,
+                    name,
+                    dry_run,
+                    format,
+                } => cli::run_migrate_generate(
+                    &mut stdout,
+                    &left,
+                    &right,
+                    name.as_deref(),
+                    dry_run,
+                    format.into(),
+                )
+                .context("migrate generate failed")?,
+                MigrateAction::Validate { id, format } => {
+                    cli::run_migrate_validate(&mut stdout, &id, format.into())
+                        .context("migrate validate failed")?
+                }
+                MigrateAction::List { format } => cli::run_migrate_list(&mut stdout, format.into())
+                    .context("migrate list failed")?,
+                MigrateAction::Show { id, format } => {
+                    cli::run_migrate_show(&mut stdout, &id, format.into())
+                        .context("migrate show failed")?
+                }
+                MigrateAction::Apply {
+                    id,
+                    database,
+                    dry_run,
+                    format,
+                } => cli::run_migrate_apply(&mut stdout, &id, &database, dry_run, format.into())
+                    .context("migrate apply failed")?,
+                MigrateAction::Delete { id } => {
+                    cli::run_migrate_delete(&mut stdout, &id).context("migrate delete failed")?
+                }
+                MigrateAction::Squash {
+                    source,
+                    name,
+                    dry_run,
+                    format,
+                } => cli::run_migrate_squash(
+                    &mut stdout,
+                    &source,
+                    name.as_deref(),
+                    dry_run,
+                    format.into(),
+                )
+                .context("migrate squash failed")?,
+                MigrateAction::Conflicts { format } => {
+                    cli::run_migrate_conflicts(&mut stdout, format.into())
+                        .context("migrate conflicts failed")?
                 }
             },
         };

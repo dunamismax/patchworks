@@ -571,3 +571,75 @@ impl SqlValue {
         }
     }
 }
+
+// --- Migration workflow types ---
+
+/// A stored migration that transforms one database state into another.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Migration {
+    /// Unique migration identifier (UUID).
+    pub id: String,
+    /// Human-readable migration name.
+    pub name: String,
+    /// SQL statements that apply the forward migration.
+    pub up_sql: String,
+    /// SQL statements that reverse the migration, if reversible.
+    pub down_sql: Option<String>,
+    /// Source database path at migration creation time.
+    pub source_path: String,
+    /// Target database path at migration creation time.
+    pub target_path: String,
+    /// Sequence number for ordering within a chain.
+    pub sequence: u32,
+    /// ISO 8601 creation timestamp.
+    pub created_at: String,
+    /// Whether this migration has been validated by applying it to a copy.
+    pub validated: bool,
+    /// Schema objects affected by this migration.
+    pub affected_tables: Vec<String>,
+    /// Optional description of what this migration does.
+    pub description: Option<String>,
+}
+
+/// Summary of a migration chain.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationChainSummary {
+    /// Total number of migrations in the chain.
+    pub total_migrations: usize,
+    /// Number of validated migrations.
+    pub validated_count: usize,
+    /// Number of reversible migrations (those with down_sql).
+    pub reversible_count: usize,
+    /// Sequence range: first migration sequence number.
+    pub first_sequence: Option<u32>,
+    /// Sequence range: last migration sequence number.
+    pub last_sequence: Option<u32>,
+    /// Tables affected across all migrations.
+    pub all_affected_tables: Vec<String>,
+}
+
+/// Result of validating a migration by applying it to a copy.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationValidation {
+    /// Whether the migration applied cleanly.
+    pub success: bool,
+    /// Whether the result matches the target database.
+    pub matches_target: bool,
+    /// Error message if the migration failed to apply.
+    pub error: Option<String>,
+    /// Tables that differ between the result and the target, if applicable.
+    pub differing_tables: Vec<String>,
+}
+
+/// A detected conflict between migrations that target the same objects.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MigrationConflict {
+    /// First migration involved in the conflict.
+    pub migration_a_id: String,
+    /// Second migration involved in the conflict.
+    pub migration_b_id: String,
+    /// Tables that both migrations modify.
+    pub overlapping_tables: Vec<String>,
+    /// Human-readable description of the conflict.
+    pub description: String,
+}
