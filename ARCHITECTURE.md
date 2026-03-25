@@ -1,6 +1,6 @@
 # Patchworks Architecture
 
-Technical architecture for the Python + Go rewrite. Written for a developer picking up the repo cold.
+Technical architecture for patchworks. Written for a developer picking up the repo cold.
 
 ## Stack overview
 

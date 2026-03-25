@@ -8,7 +8,7 @@ Patchworks is a CLI tool that treats SQLite databases the way `git diff` treats 
 
 No cloud. No account. No daemon. Your databases, the truth.
 
-> **Status:** Rewrite in progress. The project is being rebuilt in Python (with Go reserved for performance-critical paths). The previous Rust implementation shipped through v0.3.0. See [BUILD.md](BUILD.md) for the full roadmap and current phase.
+> **Status:** Early development. See [BUILD.md](BUILD.md) for the full roadmap and current phase.
 
 ## Why patchworks?
 

@@ -12,7 +12,7 @@ It should answer, at a glance:
 - what is planned but not yet built
 - what decisions, risks, and open questions shape the repo
 
-This is a working plan for a product being rebuilt from the ground up in Python and Go. When code and docs disagree, fix them together in the same change.
+This is a working plan for a product being built from scratch in Python and Go. When code and docs disagree, fix them together in the same change.
 
 ---
 
@@ -33,16 +33,11 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ---
 
-## Current release posture
-
-**Patchworks is being rebuilt in Python and Go.** The previous Rust implementation shipped through v0.3.0 with a desktop GUI, headless CLI, inspection, diffing, snapshots, SQL export, three-way merge, semantic diff awareness, and migration workflow management. This rewrite targets the same feature set using Python for CLI, orchestration, diff logic, and user-facing tooling, with Go reserved for performance-critical components if profiling justifies it.
-
 ## Current execution posture
 
 The project is at Phase 0 - scaffold and bootstrap.
 
 - **Stack decision:** Python is the primary language. Go is reserved for hot paths if Python's performance becomes a bottleneck on large databases.
-- **Target parity:** The rewrite aims for full feature parity with the Rust v0.3.0 release before expanding scope.
 - **Discipline:** Roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -65,7 +60,7 @@ If a future pass changes the real priorities, update this section first rather t
 | L-010 | Snapshot state under `~/.patchworks/` | Same location as previous release; local machine state, not project state |
 | L-011 | SQL export favors correctness over minimality | Modified tables rebuilt via temporary replacement; semantic fidelity over minimal output |
 | L-012 | CLI-first, web UI later | The CLI is the primary surface; FastAPI + htmx web UI is a later phase |
-| L-013 | No desktop GUI | The egui desktop app is not being ported; the web UI replaces it |
+| L-013 | No desktop GUI | CLI is the primary surface; local web UI via FastAPI + htmx is a later phase |
 
 ---
 
@@ -214,9 +209,9 @@ Get the Python project bootstrapped and build the core inspection and diff engin
 
 Expose all core capabilities through a CLI with subcommands, JSON output, and CI-friendly exit codes.
 
-### Priority 3 - Feature parity
+### Priority 3 - Full feature set
 
-Reach parity with the Rust v0.3.0 feature set: snapshots, export, merge, migrations.
+Snapshots, export, merge, and migration workflows.
 
 ---
 
@@ -496,7 +491,7 @@ Exit criteria:
 
 - [ ] Profiling evidence justifies the added complexity
 - [ ] Go components provide measurable speedup on identified bottlenecks
-- [ ] Python fallback works identically (correctness parity), just slower
+- [ ] Python fallback works identically, just slower
 
 ---
 
@@ -560,17 +555,17 @@ Python owns the CLI, orchestration, diff logic, export generation, and all user-
 ### decision-0002: Snapshot state under `~/.patchworks/`
 **Date:** 2026-03-25
 
-Carried forward from the Rust version. Snapshot metadata and copied database files live under `~/.patchworks/`. Local machine state, not project state.
+Snapshot metadata and copied database files live under `~/.patchworks/`. Local machine state, not project state.
 
 ### decision-0003: SQL export favors correctness over minimality
 **Date:** 2026-03-25
 
-Carried forward. Modified tables are rebuilt via temporary replacement. Exports may be heavier, but semantic fidelity takes priority.
+Modified tables are rebuilt via temporary replacement. Exports may be heavier, but semantic fidelity takes priority.
 
 ### decision-0004: Views remain inspect-only
 **Date:** 2026-03-25
 
-Carried forward. Views are browsable but not diffed or exported. Revisit when demand or diff engine capability justifies it.
+Views are browsable but not diffed or exported. Revisit when demand or diff engine capability justifies it.
 
 ### decision-0005: stdlib sqlite3 over external drivers
 **Date:** 2026-03-25
@@ -585,12 +580,12 @@ Python's bundled `sqlite3` module is sufficient for read-only inspection and com
 ### decision-0007: No desktop GUI
 **Date:** 2026-03-25
 
-The egui desktop app from the Rust version is not being ported. The CLI is the primary surface. A local web UI via FastAPI + htmx replaces the desktop GUI as a later phase.
+No desktop GUI. The CLI is the primary surface. A local web UI via FastAPI + htmx is a later phase.
 
 ### decision-0008: CLI and web UI share the same backend
 **Date:** 2026-03-25
 
-Carried forward from the Rust version's CLI/GUI parity principle. The CLI and any future web UI call the same `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` functions. No forked logic between surfaces.
+The CLI and any future web UI call the same `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` functions. No forked logic between surfaces.
 
 ---
 
@@ -598,15 +593,13 @@ Carried forward from the Rust version's CLI/GUI parity principle. The CLI and an
 
 ### Active risks
 
-- Python's `sqlite3` module may have performance limitations on very large databases (millions of rows) compared to the Rust implementation's `rusqlite`
-- Streaming row comparison in Python may be slower than the Rust streaming merge; bounded-memory correctness is the priority over raw speed
-- The web UI phase adds FastAPI as a runtime dependency for what was previously a zero-dependency desktop tool
-- Feature parity with Rust v0.3.0 is a substantial amount of code to rewrite; scope creep during rewrite is a risk
+- Python's `sqlite3` module may have performance limitations on very large databases (millions of rows)
+- Streaming row comparison in Python needs bounded-memory correctness as the priority over raw speed
+- The web UI phase adds FastAPI as a runtime dependency
 - Live databases, WAL-backed databases, and actively changing sources are handled best-effort with read-only access; concurrent writes during inspection can produce inconsistent results
 
 ### Strategic risks
 
-- Rebuilding a shipped product in a different language carries opportunity cost - the time could go toward new features instead
 - Go acceleration layer may never be needed, but planning for it adds architectural complexity to the Python code
 - Plugin system introduces API stability obligations that constrain future refactoring
 - Multi-engine support could dilute SQLite-specific correctness if abstraction boundaries are drawn wrong
@@ -654,7 +647,7 @@ If priorities change, replace this list rather than letting stale direction ling
 
 ### 2026-03-25
 
-- Rewrote BUILD.md and README.md to plan patchworks as a Python + Go project instead of Rust. Product vision and feature set are unchanged. All phases are fresh with unchecked boxes. No code changes - planning only. Next: Phase 0 scaffold and bootstrap.
+- Created BUILD.md and README.md. Product vision and feature set defined. All phases have fresh unchecked boxes. No code yet - planning only. Next: Phase 0 scaffold and bootstrap.
 
 ---
 
@@ -663,5 +656,5 @@ If priorities change, replace this list rather than letting stale direction ling
 - 2026-03-25: Python-first architecture - Python owns CLI, orchestration, diff logic, export generation, and user-facing tooling; Go deferred until profiling justifies it - keeps the codebase in one language as long as possible.
 - 2026-03-25: stdlib sqlite3 over external drivers - Python's bundled sqlite3 is sufficient for read-only inspection - no external dependency needed.
 - 2026-03-25: argparse over click/typer - stdlib handles the subcommand structure without adding a dependency - revisit if CLI ergonomics become friction.
-- 2026-03-25: No desktop GUI - egui desktop app is not being ported; CLI is primary, FastAPI + htmx web UI replaces desktop GUI as a later phase.
-- 2026-03-25: Snapshot location, export correctness, views inspect-only, and backend sharing carried forward from the Rust version with unchanged rationale.
+- 2026-03-25: No desktop GUI - CLI is primary, FastAPI + htmx web UI is a later phase.
+- 2026-03-25: Snapshot location, export correctness, views inspect-only, and backend sharing decisions established.
