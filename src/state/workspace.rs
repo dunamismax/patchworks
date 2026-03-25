@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 
 use crate::db::differ::DatabaseDiff;
-use crate::db::types::{DatabaseSummary, Snapshot, TablePage, TableQuery};
+use crate::db::types::{
+    AnnotationStatus, DatabaseSummary, DiffAnnotation, DiffFilter, Snapshot, TablePage, TableQuery,
+};
 
 /// Which main view is visible in the workspace.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -132,6 +134,12 @@ pub struct DiffState {
     pub display_mode: DiffDisplayMode,
     /// Last diff error.
     pub error: Option<String>,
+    /// Active filter for narrowing the diff display.
+    pub filter: DiffFilter,
+    /// Annotations for triage workflows.
+    pub annotations: Vec<DiffAnnotation>,
+    /// Whether to show the semantic changes panel.
+    pub show_semantic: bool,
 }
 
 impl Default for DiffState {
@@ -143,7 +151,47 @@ impl Default for DiffState {
             selected_table: None,
             display_mode: DiffDisplayMode::Grid,
             error: None,
+            filter: DiffFilter::all(),
+            annotations: Vec::new(),
+            show_semantic: true,
         }
+    }
+}
+
+impl DiffState {
+    /// Adds or updates an annotation.
+    pub fn annotate(
+        &mut self,
+        table_name: &str,
+        row_key: Option<Vec<crate::db::types::SqlValue>>,
+        status: AnnotationStatus,
+        note: String,
+    ) {
+        // Update existing annotation if it matches
+        if let Some(existing) = self
+            .annotations
+            .iter_mut()
+            .find(|a| a.table_name == table_name && a.row_key == row_key)
+        {
+            existing.status = status;
+            existing.note = note;
+            return;
+        }
+
+        self.annotations.push(DiffAnnotation {
+            table_name: table_name.to_owned(),
+            row_key,
+            status,
+            note,
+        });
+    }
+
+    /// Returns annotations for a specific table.
+    pub fn table_annotations(&self, table_name: &str) -> Vec<&DiffAnnotation> {
+        self.annotations
+            .iter()
+            .filter(|a| a.table_name == table_name)
+            .collect()
     }
 }
 

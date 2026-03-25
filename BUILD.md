@@ -35,7 +35,7 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current release posture
 
-**Patchworks v0.3.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. CI now covers both Linux and macOS. Install paths (`cargo install --path .` and `cargo install patchworks`) are verified. Phase 6 (product polish) is complete — the desktop app now has a schema browser, table search, keyboard shortcuts, theme support, recent files, and improved diff UX. The next job is advanced diff intelligence (Phase 7).
+**Patchworks v0.3.0 is released, and the project is still active.** The desktop app and headless CLI both ship inspection, diffing, snapshots, and SQL export. CI now covers both Linux and macOS. Install paths (`cargo install --path .` and `cargo install patchworks`) are verified. Phase 6 (product polish) is complete. Phase 7 (advanced diff intelligence) is complete — the diff engine now includes column-level change highlighting, diff filtering by change type and table, aggregate summary statistics, semantic diff awareness (table renames, column renames, compatible type shifts), three-way merge with conflict detection, diff annotations for triage, and data-type-aware comparison rules. The next job is migration workflow management (Phase 8).
 
 ## Current execution posture
 
@@ -46,7 +46,8 @@ Patchworks is in the healthy middle state between prototype and finished platfor
 - **CLI complete:** Phase 4 landed headless subcommands for inspect, diff, export, and snapshot management with JSON output and CI-friendly exit codes.
 - **Platform confidence complete:** Phase 5 landed macOS CI, verified install paths, tightened operational guidance in README, and recorded packaging decisions.
 - **UX polish complete:** Phase 6 landed schema browser, table search/filter, keyboard shortcuts, theme support, recent files, collapsible diff sections, and diff summary statistics.
-- **Active lane:** advanced diff intelligence (Phase 7).
+- **Diff intelligence complete:** Phase 7 landed column-level change highlighting, diff filtering, aggregate summary statistics, semantic diff awareness (table/column renames, compatible type shifts), three-way merge with explicit conflict surfacing, diff annotations for triage, and data-type-aware comparison rules.
+- **Active lane:** migration workflow management (Phase 8).
 - **Discipline:** roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -77,14 +78,23 @@ What exists:
 - Keyboard shortcuts: ⌘1-6 for views, ⌘D for diff
 - Theme support: dark, light, and system-following
 - Recent-files memory with quick reopen from toolbar menu
-- Headless CLI subcommands: `inspect`, `diff`, `export`, `snapshot save/list/delete`
-- Machine-readable JSON output (`--format json`) on inspect, diff, and snapshot list
+- Column-level change highlighting within modified rows
+- Diff filtering by change type (added/removed/modified) and by table
+- Aggregate diff summary statistics (row counts, cell counts, schema object counts)
+- Semantic diff awareness: detects table renames, column renames, and compatible type shifts
+- Three-way merge via `patchworks merge <ancestor> <left> <right>` with conflict detection
+- Conflict surfacing for row conflicts, delete-modify conflicts, schema conflicts, and table-delete conflicts
+- Diff annotations for triage workflows (pending/approved/rejected/needs-discussion/deferred)
+- Data-type-aware comparison rules (integer vs real equivalence, text vs integer for numeric columns)
+- Headless CLI subcommands: `inspect`, `diff`, `export`, `merge`, `snapshot save/list/delete`
+- Machine-readable JSON output (`--format json`) on inspect, diff, merge, and snapshot list
 - CI-friendly exit codes: 0 = success, 1 = error, 2 = differences found
 - File output for exports (`-o/--output`)
 
 What does **not** exist yet:
 
 - View diffing or export support
+- Migration chain management (generate, store, replay ordered sequences)
 - Explicit cancel control for long-running background jobs
 - Formal desktop packaging or installer automation beyond Cargo packaging
 - Strong guarantees for heavily changing live databases or actively-written WAL-backed files (read-only access works, but concurrent writes during inspection can produce inconsistent results)
@@ -95,7 +105,7 @@ What does **not** exist yet:
 - Repo path: `/Users/sawyer/github/patchworks`
 - Branch: `main`
 - Host: macOS arm64 (`Darwin 25.4.0`)
-- Release verification: build, test (58 tests), clippy, fmt, bench-compile, deny, and CLI help were recorded passing
+- Release verification: build, test (99 tests), clippy, fmt, bench-compile, deny, and CLI help were recorded passing
 - Install verification: both `cargo install --path .` and `cargo install patchworks` (from crates.io) recorded passing on macOS arm64
 
 This baseline is still useful, but it is not permission to stop verifying. Any later change that touches product behavior should record its own narrower proof.
@@ -126,12 +136,15 @@ This baseline is still useful, but it is not permission to stop verifying. Any l
 | `src/diff/schema.rs` | Schema diff rules |
 | `src/diff/data.rs` | Row diff rules and invariants |
 | `src/diff/export.rs` | SQL export generation |
+| `src/diff/semantic.rs` | Semantic diff awareness (renames, compatible type shifts) |
+| `src/diff/merge.rs` | Three-way merge and conflict detection |
 | `src/state/workspace.rs` | UI-facing workspace state |
 | `src/state/recent.rs` | Recent-files persistence |
 | `src/ui/` | Rendering and interaction surfaces |
 | `src/ui/schema_browser.rs` | Schema browser with DDL preview |
 | `tests/cli_tests.rs` | CLI command behavior and CLI/GUI parity expectations |
 | `tests/diff_tests.rs` | Diff and export behavior expectations |
+| `tests/phase7_tests.rs` | Phase 7 advanced diff intelligence expectations |
 | `tests/proptest_invariants.rs` | Property-based invariant checks |
 | `tests/snapshot_tests.rs` | Snapshot behavior expectations |
 | `benches/diff_hot_paths.rs` | Diff performance tracking |
@@ -269,24 +282,17 @@ Patchworks is a native Rust application. Dependencies are managed through `Cargo
 
 ## Current priority stack
 
-### Priority 1 — Advanced diff intelligence
+### Priority 1 — Migration workflow management
 
-The desktop UX is polished. The next step is making the diff engine smarter.
-
-Near-term intelligence work:
-
-- column-level change highlighting within modified rows
-- diff filtering by change type and by table
-- diff statistics and summary views beyond the current aggregate bar
-- semantic diff awareness for column renames and compatible type shifts
+The diff engine is now intelligent. The next step is building migration chains (Phase 8).
 
 ### Priority 2 — Error recovery polish (Phase 6 residual)
 
 One Phase 6 goal was deferred: clearer error recovery with retry affordances, richer diagnostic detail, and user-facing failure states. Current error display is adequate but could be more actionable.
 
-### Priority 3 — Migration workflow management
+### Priority 3 — Plugin and extension architecture
 
-After the diff engine is intelligent and the UX covers error recovery well, begin building migration chains.
+After migration workflows are solid, evaluate the extension surface.
 
 If a code pass does not obviously move one of these priorities, it should say why.
 
@@ -303,7 +309,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 4 | Headless CLI and automation surface | **Done** |
 | 5 | Packaging, platform confidence, and release discipline | **Done** |
 | 6 | Product polish and UX refinement | **Done** |
-| 7 | Advanced diff intelligence | **Planned** |
+| 7 | Advanced diff intelligence | **Done** |
 | 8 | Migration workflow management | **Planned** |
 | 9 | Plugin and extension architecture | **Exploratory** |
 | 10 | Team features and shared snapshot registries | **Exploratory** |
@@ -311,7 +317,7 @@ If a code pass does not obviously move one of these priorities, it should say wh
 | 12 | Long-term platform evolution | **Exploratory** |
 | 13 | Tauri 2 desktop shell | **Planned** |
 
-Phases 0-6 are the shipped foundation. Phase 7 (advanced diff intelligence) is the next active build step.
+Phases 0-7 are the shipped foundation. Phase 8 (migration workflow management) is the next active build step.
 
 ---
 
@@ -461,21 +467,21 @@ Exit criteria:
 ---
 
 ### Phase 7 — Advanced diff intelligence
-**Status: planned**
+**Status: done**
 
 Goals:
-- [ ] Add column-level change highlighting within modified rows
-- [ ] Add diff filtering by change type and by table
-- [ ] Add diff statistics and summary views
-- [ ] Add semantic diff awareness for table renames, column renames, and compatible type shifts where defensible
-- [ ] Add conflict detection for two databases compared against a common ancestor snapshot
-- [ ] Add three-way merge support with explicit conflict surfacing
-- [ ] Add diff annotations for triage workflows
-- [ ] Add data-type-aware comparison rules that distinguish cosmetic differences from semantic ones
+- [x] Add column-level change highlighting within modified rows
+- [x] Add diff filtering by change type and by table
+- [x] Add diff statistics and summary views
+- [x] Add semantic diff awareness for table renames, column renames, and compatible type shifts where defensible
+- [x] Add conflict detection for two databases compared against a common ancestor snapshot
+- [x] Add three-way merge support with explicit conflict surfacing
+- [x] Add diff annotations for triage workflows
+- [x] Add data-type-aware comparison rules that distinguish cosmetic differences from semantic ones
 
 Exit criteria:
-- [ ] Patchworks provides actionable intelligence about changes, not just raw deltas
-- [ ] Three-way merge works correctly for non-conflicting cases and clearly exposes conflicts when manual judgment is required
+- [x] Patchworks provides actionable intelligence about changes, not just raw deltas
+- [x] Three-way merge works correctly for non-conflicting cases and clearly exposes conflicts when manual judgment is required
 
 ---
 
@@ -695,6 +701,21 @@ Indexes and triggers are browsable in the schema browser with full DDL preview. 
 
 Phase 6 deferred explicit retry affordances and richer error diagnostics. Current error display (colored labels with error text in panes and status bar) is adequate for the shipped feature set. Revisit when user feedback reveals specific pain points.
 
+### decision-0022: Three-way merge is a core feature
+**Date:** 2026-03-24
+
+Three-way merge belongs in core rather than as a plugin. It is a natural extension of the diff engine and critical for team workflows where multiple people modify the same database. The `patchworks merge` CLI subcommand and the underlying `diff::merge` module are first-class.
+
+### decision-0023: Semantic diff awareness uses heuristic confidence scores
+**Date:** 2026-03-24
+
+Table renames and column renames are detected via column similarity (Jaccard index with type weighting) and property matching (type/nullable/pk/default). Confidence scores (0-100) are reported alongside detections. Users should treat these as suggestions, not assertions. The threshold for table rename detection is 70% column overlap; for column renames, 60% property match.
+
+### decision-0024: SqlValue implements Ord via bit-level float ordering
+**Date:** 2026-03-24
+
+`SqlValue` now implements `Eq` and `Ord` to support use as `BTreeMap` keys in the merge engine. Float ordering uses `partial_cmp` with `to_bits` fallback for NaN. This is a stable, deterministic ordering suitable for merge key matching, not a mathematical ordering.
+
 ### decision-0015: CLI shares the GUI's backend truth layer
 **Date:** 2026-03-24
 
@@ -730,7 +751,7 @@ Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `wr
 | Should the project add desktop packaging (DMG, AppImage) beyond Cargo install for broader reach? | 6 | Distribution |
 | Should the first CLI ship human-readable output only, or stabilize JSON/JSONL immediately? | 4, 11 | Automation contract |
 | Should the plugin system use compiled Rust dynamic libraries, WASM, or both? | 9 | Architecture |
-| Should three-way merge be a core feature or a plugin? | 7, 9 | Scope |
+| ~~Should three-way merge be a core feature or a plugin?~~ Core (decision-0022) | 7, 9 | Scope |
 | How should migration chain state be stored? | 8 | Storage architecture |
 | Is multi-engine support worth the abstraction cost? | 12 | Product identity |
 | Should the shared snapshot registry be a separate service or embedded? | 10 | Architecture |
@@ -742,14 +763,14 @@ Headless CLI subcommands call the same `inspect_database`, `diff_databases`, `wr
 
 If somebody picks this repo up for the next substantive pass, the most credible sequence is:
 
-1. **Begin Phase 7 advanced diff intelligence**
-   - Column-level change highlighting within modified rows.
-   - Diff filtering by change type and by table.
-   - Diff statistics and summary views beyond the current aggregate bar.
+1. **Begin Phase 8 migration workflow management**
+   - Migration chain support: generate, store, and replay ordered migration sequences.
+   - Migration validation by applying generated SQL to a copy and verifying the result.
+   - Rollback generation for reversible migrations.
 2. **Error recovery polish (Phase 6 residual)**
    - Retry affordances for failed loads, better diagnostic detail in error states.
-3. **Only then widen into migration workflow or plugin work**
-   - Migration chains and plugin extensibility should compound on a polished and trustworthy diff engine.
+3. **Only then widen into plugin work**
+   - Plugin extensibility should compound on a polished and trustworthy diff + migration engine.
 
 If priorities change, replace this list with the new order rather than letting stale direction linger.
 
@@ -810,6 +831,9 @@ If priorities change, replace this list with the new order rather than letting s
 - 2026-03-24: Views remain inspect-only (reaffirmed decision-0004) - view diffing and export support is not justified by current usage - revisit when users request it or when the diff engine's semantic understanding is stronger.
 - 2026-03-24: Indexes and triggers are browsable via the schema browser panel rather than dedicated diff UI panels - the schema diff view already surfaces index/trigger changes - dedicated panels are additional complexity without proven demand.
 - 2026-03-24: Error recovery improvements (retry affordances, richer diagnostics) are deferred from Phase 6 - current error display is adequate for the shipped feature set - revisit when user feedback or usage patterns reveal pain points.
+- 2026-03-24: Three-way merge is a core feature rather than a plugin - it is a natural extension of the diff engine and critical for team workflows - the `patchworks merge` CLI subcommand and the underlying `diff::merge` module are first-class.
+- 2026-03-24: Semantic diff awareness uses heuristic confidence scores for table and column rename detection - table renames require 70% column overlap, column renames require 60% property match - users should treat detections as suggestions, not assertions.
+- 2026-03-24: `SqlValue` implements `Eq` and `Ord` via bit-level float ordering to support `BTreeMap`-keyed merge data structures - this is a stable deterministic ordering suitable for key matching, not a mathematical ordering.
 
 ### 2026-03-24 (Phase 3 completion)
 
@@ -828,6 +852,12 @@ If priorities change, replace this list with the new order rather than letting s
 ### 2026-03-24 (Phase 6 completion — UX polish)
 
 - Completed Phase 6 product polish and UX refinement. Added a dedicated schema browser panel (`src/ui/schema_browser.rs`) showing tables, views, indexes, and triggers with full DDL preview in collapsible sections. Added table name search/filter in file panels. Added keyboard shortcuts: ⌘1-6 for view switching, ⌘D for diff. Added theme support with dark/light/system selector in toolbar. Added recent-files persistence (`src/state/recent.rs`) with quick L/R reopen from a toolbar menu — stores up to 20 files in `~/.patchworks/recent.json`. Refactored diff view with collapsible sections (removed, added, modified each grouped with row counts), added aggregate summary statistics bar, and per-table change indicators in the table selector. Improved schema diff view with summary bar covering index and trigger changes, collapsed unchanged tables by default. Improved file panel to show filename with tooltip, index/trigger counts. Made SQL export preview read-only with line/statement counts. Decided views remain inspect-only (reaffirmed decision-0004). Decided indexes/triggers are browsable via the schema browser rather than dedicated diff panels. Deferred error recovery improvements — current error display is adequate for the shipped feature set. Verified with: `cargo build`, `cargo test` (58 tests), `cargo fmt --all --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo bench --no-run`, `cargo deny check`, `cargo run -- --help`. Next: Phase 7 advanced diff intelligence.
+
+---
+
+### 2026-03-24 (Phase 7 completion — Advanced diff intelligence)
+
+- Completed Phase 7 advanced diff intelligence. Added column-level change highlighting within modified rows — the diff engine already captured per-cell `CellChange` data, now the GUI renders old→new values with distinct red/green highlighting per column. Added diff filtering by change type (added/removed/modified) and by table — new `DiffFilter` type and `filter_data_diffs` function allow narrowing diff results, with UI checkboxes in the diff view. Added `DiffSummary` aggregate statistics covering table counts, row counts, cell change counts, and schema object counts, displayed in both the CLI and GUI. Added semantic diff awareness via new `src/diff/semantic.rs` module: detects table renames (via column similarity Jaccard scoring), column renames (via type/nullable/pk/default matching), and compatible type shifts (using SQLite's type affinity rules). Added three-way merge support via new `src/diff/merge.rs` module and `patchworks merge <ancestor> <left> <right>` CLI subcommand: diffs both derived databases against the ancestor, merges non-conflicting row and schema changes, and surfaces four conflict types (RowConflict, SchemaConflict, DeleteModifyConflict, TableDeleteConflict). Added diff annotations for triage workflows: `DiffAnnotation` type with `AnnotationStatus` (pending/approved/rejected/needs-discussion/deferred), wired into `DiffState` for the GUI. Added data-type-aware comparison via `values_semantically_equal` which distinguishes cosmetic differences (integer 1 vs real 1.0, text "42" vs integer 42 for numeric columns) from semantic ones based on SQLite type affinity. Added `Ord`/`Eq` implementations for `SqlValue` to support `BTreeMap`-keyed merge data structures. New source files: `src/diff/semantic.rs`, `src/diff/merge.rs`. New test file: `tests/phase7_tests.rs` (25 integration tests). Updated CLI diff output to include column-level detail for modified rows, semantic analysis section, and aggregate summary. Updated GUI diff view with filter controls, semantic changes panel, and column-level old→new highlighting. Verified with: `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test` (99 tests), `cargo build`, `cargo build --release`. Next: Phase 8 migration workflow management.
 
 ---
 

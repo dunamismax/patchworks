@@ -1290,6 +1290,8 @@ mod tests {
                 warnings: Vec::new(),
             }],
             sql_export: String::new(),
+            summary: Default::default(),
+            semantic_changes: Vec::new(),
         }
     }
 }

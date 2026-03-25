@@ -3,8 +3,10 @@
 use std::path::Path;
 
 use crate::db::inspector::inspect_database;
-use crate::db::types::{DatabaseSummary, SchemaDiff, TableDataDiff};
-use crate::diff::{data, export, schema};
+use crate::db::types::{
+    DatabaseSummary, DiffFilter, DiffSummary, SchemaDiff, SemanticChange, TableDataDiff,
+};
+use crate::diff::{data, export, schema, semantic};
 use crate::error::Result;
 
 /// Background progress stage for a database diff.
@@ -53,6 +55,10 @@ pub struct DatabaseDiff {
     pub data_diffs: Vec<TableDataDiff>,
     /// SQL migration text for the current diff.
     pub sql_export: String,
+    /// Aggregate summary statistics.
+    pub summary: DiffSummary,
+    /// Detected semantic changes (renames, compatible type shifts).
+    pub semantic_changes: Vec<SemanticChange>,
 }
 
 /// Inspects two databases and computes schema, data, and SQL-export views.
@@ -122,13 +128,104 @@ where
     });
     let sql_export = export::export_diff_as_sql(right_path, &left, &right, &schema, &data_diffs)?;
 
+    let summary = compute_diff_summary(&schema, &data_diffs);
+    let semantic_changes = semantic::detect_semantic_changes(&left, &right, &schema);
+
     Ok(DatabaseDiff {
         left,
         right,
         schema,
         data_diffs,
         sql_export,
+        summary,
+        semantic_changes,
     })
+}
+
+/// Computes an aggregate summary of a diff result.
+pub fn compute_diff_summary(schema: &SchemaDiff, data_diffs: &[TableDataDiff]) -> DiffSummary {
+    let tables_with_changes = data_diffs
+        .iter()
+        .filter(|d| d.stats.added > 0 || d.stats.removed > 0 || d.stats.modified > 0)
+        .count();
+
+    let total_cells_changed: u64 = data_diffs
+        .iter()
+        .flat_map(|d| &d.modified_rows)
+        .map(|m| m.changes.len() as u64)
+        .sum();
+
+    DiffSummary {
+        tables_compared: data_diffs.len(),
+        tables_changed: tables_with_changes,
+        tables_unchanged: data_diffs.len() - tables_with_changes,
+        tables_added: schema.added_tables.len(),
+        tables_removed: schema.removed_tables.len(),
+        tables_schema_modified: schema.modified_tables.len(),
+        total_rows_added: data_diffs.iter().map(|d| d.stats.added).sum(),
+        total_rows_removed: data_diffs.iter().map(|d| d.stats.removed).sum(),
+        total_rows_modified: data_diffs.iter().map(|d| d.stats.modified).sum(),
+        total_rows_unchanged: data_diffs.iter().map(|d| d.stats.unchanged).sum(),
+        total_cells_changed,
+        indexes_added: schema.added_indexes.len(),
+        indexes_removed: schema.removed_indexes.len(),
+        indexes_modified: schema.modified_indexes.len(),
+        triggers_added: schema.added_triggers.len(),
+        triggers_removed: schema.removed_triggers.len(),
+        triggers_modified: schema.modified_triggers.len(),
+    }
+}
+
+/// Applies a filter to diff results, returning only the matching table diffs.
+pub fn filter_data_diffs(data_diffs: &[TableDataDiff], filter: &DiffFilter) -> Vec<TableDataDiff> {
+    data_diffs
+        .iter()
+        .filter(|d| filter.accepts_table(&d.table_name))
+        .map(|d| {
+            let added_rows = if filter.show_added {
+                d.added_rows.clone()
+            } else {
+                Vec::new()
+            };
+            let removed_rows = if filter.show_removed {
+                d.removed_rows.clone()
+            } else {
+                Vec::new()
+            };
+            let removed_row_keys = if filter.show_removed {
+                d.removed_row_keys.clone()
+            } else {
+                Vec::new()
+            };
+            let modified_rows = if filter.show_modified {
+                d.modified_rows.clone()
+            } else {
+                Vec::new()
+            };
+
+            let mut stats = d.stats.clone();
+            if !filter.show_added {
+                stats.added = 0;
+            }
+            if !filter.show_removed {
+                stats.removed = 0;
+            }
+            if !filter.show_modified {
+                stats.modified = 0;
+            }
+
+            TableDataDiff {
+                table_name: d.table_name.clone(),
+                columns: d.columns.clone(),
+                added_rows,
+                removed_rows,
+                removed_row_keys,
+                modified_rows,
+                stats,
+                warnings: d.warnings.clone(),
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

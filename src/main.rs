@@ -61,6 +61,21 @@ enum Command {
         output: Option<PathBuf>,
     },
 
+    /// Three-way merge: compare two databases against a common ancestor.
+    ///
+    /// Detects conflicts and shows which changes can be auto-merged.
+    Merge {
+        /// Ancestor (common base) database path.
+        ancestor: PathBuf,
+        /// Left (first derived) database path.
+        left: PathBuf,
+        /// Right (second derived) database path.
+        right: PathBuf,
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Human)]
+        format: Format,
+    },
+
     /// Manage database snapshots.
     Snapshot {
         #[command(subcommand)]
@@ -156,6 +171,13 @@ fn main() -> anyhow::Result<()> {
                 right,
                 format,
             } => cli::run_diff(&mut stdout, &left, &right, format.into()).context("diff failed")?,
+            Command::Merge {
+                ancestor,
+                left,
+                right,
+                format,
+            } => cli::run_merge(&mut stdout, &ancestor, &left, &right, format.into())
+                .context("merge failed")?,
             Command::Export {
                 left,
                 right,

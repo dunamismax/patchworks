@@ -1,12 +1,13 @@
-//! Row diff rendering.
+//! Row diff rendering with column-level highlighting, filtering, and summary.
 
 use egui::{Color32, Grid, RichText, ScrollArea, Ui};
 
-use crate::db::types::TableDataDiff;
+use crate::db::differ::filter_data_diffs;
+use crate::db::types::{SemanticChange, TableDataDiff};
 use crate::state::workspace::{DiffDisplayMode, DiffState};
 use crate::ui::progress;
 
-/// Renders row-level diff results.
+/// Renders row-level diff results with enhanced intelligence features.
 pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
     if let Some(progress_state) = &diff_state.progress {
         progress::render_progress(ui, progress_state);
@@ -27,36 +28,24 @@ pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
         return;
     };
 
-    // Summary stats across all tables
-    let total_added: u64 = result.data_diffs.iter().map(|d| d.stats.added).sum();
-    let total_removed: u64 = result.data_diffs.iter().map(|d| d.stats.removed).sum();
-    let total_modified: u64 = result.data_diffs.iter().map(|d| d.stats.modified).sum();
-    let total_unchanged: u64 = result.data_diffs.iter().map(|d| d.stats.unchanged).sum();
-    let schema = &result.schema;
-    let has_schema_changes = !schema.added_tables.is_empty()
-        || !schema.removed_tables.is_empty()
-        || !schema.modified_tables.is_empty()
-        || !schema.added_indexes.is_empty()
-        || !schema.removed_indexes.is_empty()
-        || !schema.modified_indexes.is_empty()
-        || !schema.added_triggers.is_empty()
-        || !schema.removed_triggers.is_empty()
-        || !schema.modified_triggers.is_empty();
+    // Apply filter to data diffs
+    let filtered_diffs = filter_data_diffs(&result.data_diffs, &diff_state.filter);
 
-    ui.horizontal_wrapped(|ui| {
-        ui.label(RichText::new("Summary:").strong());
-        ui.colored_label(Color32::GREEN, format!("+{total_added}"));
-        ui.colored_label(Color32::RED, format!("-{total_removed}"));
-        ui.colored_label(Color32::YELLOW, format!("~{total_modified}"));
-        ui.label(format!("={total_unchanged}"));
-        if has_schema_changes {
-            ui.colored_label(Color32::YELLOW, "• schema changes");
-        }
-        ui.label(format!("{} tables compared", result.data_diffs.len()));
-    });
-
+    // Summary stats
+    render_summary_bar(ui, result, &filtered_diffs);
     ui.separator();
 
+    // Semantic changes panel
+    if diff_state.show_semantic && !result.semantic_changes.is_empty() {
+        render_semantic_changes(ui, &result.semantic_changes);
+        ui.separator();
+    }
+
+    // Filter controls
+    render_filter_controls(ui, diff_state);
+    ui.separator();
+
+    // Display mode selector
     ui.horizontal(|ui| {
         ui.selectable_value(&mut diff_state.display_mode, DiffDisplayMode::Grid, "Grid");
         ui.selectable_value(
@@ -64,11 +53,15 @@ pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
             DiffDisplayMode::Unified,
             "Unified",
         );
+        ui.separator();
+        ui.checkbox(&mut diff_state.show_semantic, "Show semantic analysis");
     });
 
     ui.separator();
+
+    // Table selector
     ui.horizontal_wrapped(|ui| {
-        for table in &result.data_diffs {
+        for table in &filtered_diffs {
             let selected = diff_state.selected_table.as_deref() == Some(table.table_name.as_str());
             let has_changes =
                 table.stats.added > 0 || table.stats.removed > 0 || table.stats.modified > 0;
@@ -89,13 +82,8 @@ pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
     let active = diff_state
         .selected_table
         .as_ref()
-        .and_then(|name| {
-            result
-                .data_diffs
-                .iter()
-                .find(|diff| &diff.table_name == name)
-        })
-        .or_else(|| result.data_diffs.first());
+        .and_then(|name| filtered_diffs.iter().find(|diff| &diff.table_name == name))
+        .or_else(|| filtered_diffs.first());
 
     if let Some(table_diff) = active {
         render_stats(ui, table_diff);
@@ -106,6 +94,127 @@ pub fn render_diff_view(ui: &mut Ui, diff_state: &mut DiffState) {
     } else {
         ui.label("No shared tables were available for row diffing.");
     }
+}
+
+fn render_summary_bar(
+    ui: &mut Ui,
+    result: &crate::db::differ::DatabaseDiff,
+    filtered_diffs: &[TableDataDiff],
+) {
+    let summary = &result.summary;
+    let schema = &result.schema;
+    let has_schema_changes = !schema.added_tables.is_empty()
+        || !schema.removed_tables.is_empty()
+        || !schema.modified_tables.is_empty()
+        || !schema.added_indexes.is_empty()
+        || !schema.removed_indexes.is_empty()
+        || !schema.modified_indexes.is_empty()
+        || !schema.added_triggers.is_empty()
+        || !schema.removed_triggers.is_empty()
+        || !schema.modified_triggers.is_empty();
+
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("Summary:").strong());
+        ui.colored_label(
+            Color32::GREEN,
+            format!("+{} rows", summary.total_rows_added),
+        );
+        ui.colored_label(
+            Color32::RED,
+            format!("-{} rows", summary.total_rows_removed),
+        );
+        ui.colored_label(
+            Color32::YELLOW,
+            format!("~{} rows", summary.total_rows_modified),
+        );
+        ui.label(format!("={} unchanged", summary.total_rows_unchanged));
+        if summary.total_cells_changed > 0 {
+            ui.label(format!("({} cells changed)", summary.total_cells_changed));
+        }
+        if has_schema_changes {
+            ui.colored_label(Color32::YELLOW, "• schema changes");
+        }
+        ui.label(format!("{} tables compared", filtered_diffs.len()));
+        if summary.tables_added > 0 {
+            ui.colored_label(Color32::GREEN, format!("+{} tables", summary.tables_added));
+        }
+        if summary.tables_removed > 0 {
+            ui.colored_label(Color32::RED, format!("-{} tables", summary.tables_removed));
+        }
+    });
+}
+
+fn render_semantic_changes(ui: &mut Ui, changes: &[SemanticChange]) {
+    egui::CollapsingHeader::new(
+        RichText::new(format!("Semantic Analysis ({} findings)", changes.len()))
+            .color(Color32::from_rgb(100, 180, 255)),
+    )
+    .default_open(true)
+    .show(ui, |ui| {
+        for change in changes {
+            match change {
+                SemanticChange::TableRename {
+                    left_name,
+                    right_name,
+                    confidence,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("⟳");
+                        ui.colored_label(
+                            Color32::from_rgb(100, 180, 255),
+                            format!(
+                                "Table rename: {} → {} (confidence: {}%)",
+                                left_name, right_name, confidence
+                            ),
+                        );
+                    });
+                }
+                SemanticChange::ColumnRename {
+                    table_name,
+                    left_column,
+                    right_column,
+                    confidence,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("⟳");
+                        ui.colored_label(
+                            Color32::from_rgb(100, 180, 255),
+                            format!(
+                                "Column rename in {}: {} → {} (confidence: {}%)",
+                                table_name, left_column, right_column, confidence
+                            ),
+                        );
+                    });
+                }
+                SemanticChange::CompatibleTypeShift {
+                    table_name,
+                    column_name,
+                    left_type,
+                    right_type,
+                } => {
+                    ui.horizontal(|ui| {
+                        ui.label("≈");
+                        ui.colored_label(
+                            Color32::from_rgb(180, 200, 100),
+                            format!(
+                                "Compatible type shift in {}.{}: {} → {}",
+                                table_name, column_name, left_type, right_type
+                            ),
+                        );
+                    });
+                }
+            }
+        }
+    });
+}
+
+fn render_filter_controls(ui: &mut Ui, diff_state: &mut DiffState) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Filter:").strong());
+        ui.checkbox(&mut diff_state.filter.show_added, "Added");
+        ui.checkbox(&mut diff_state.filter.show_removed, "Removed");
+        ui.checkbox(&mut diff_state.filter.show_modified, "Modified");
+    });
 }
 
 fn render_stats(ui: &mut Ui, table_diff: &TableDataDiff) {
@@ -129,7 +238,7 @@ fn render_stats(ui: &mut Ui, table_diff: &TableDataDiff) {
 
 fn render_grid(ui: &mut Ui, table_diff: &TableDataDiff) {
     ScrollArea::both().show(ui, |ui| {
-        // Collapsible sections for each change type
+        // Removed rows
         if !table_diff.removed_rows.is_empty() {
             egui::CollapsingHeader::new(
                 RichText::new(format!("Removed ({} rows)", table_diff.removed_rows.len()))
@@ -155,6 +264,7 @@ fn render_grid(ui: &mut Ui, table_diff: &TableDataDiff) {
             });
         }
 
+        // Added rows
         if !table_diff.added_rows.is_empty() {
             egui::CollapsingHeader::new(
                 RichText::new(format!("Added ({} rows)", table_diff.added_rows.len()))
@@ -180,6 +290,7 @@ fn render_grid(ui: &mut Ui, table_diff: &TableDataDiff) {
             });
         }
 
+        // Modified rows with column-level highlighting
         if !table_diff.modified_rows.is_empty() {
             egui::CollapsingHeader::new(
                 RichText::new(format!(
@@ -207,19 +318,25 @@ fn render_grid(ui: &mut Ui, table_diff: &TableDataDiff) {
                                 .collect::<Vec<_>>()
                                 .join(", ");
                             ui.label(pk_label);
+
+                            // Column-level change highlighting
                             for column in &table_diff.columns {
                                 let change =
                                     row.changes.iter().find(|change| change.column == *column);
                                 if let Some(change) = change {
-                                    ui.colored_label(
-                                        Color32::YELLOW,
-                                        format!(
-                                            "{} → {}",
-                                            change.old_value.display(),
-                                            change.new_value.display()
-                                        ),
-                                    );
+                                    // Highlight changed columns with distinct old→new display
+                                    ui.vertical(|ui| {
+                                        ui.colored_label(
+                                            Color32::from_rgb(255, 100, 100),
+                                            format!("⊖ {}", change.old_value.display()),
+                                        );
+                                        ui.colored_label(
+                                            Color32::from_rgb(100, 255, 100),
+                                            format!("⊕ {}", change.new_value.display()),
+                                        );
+                                    });
                                 } else {
+                                    // Unchanged column: dimmed
                                     ui.colored_label(Color32::GRAY, "—");
                                 }
                             }
@@ -300,12 +417,18 @@ fn render_unified(ui: &mut Ui, table_diff: &TableDataDiff) {
                         .join(", ");
                     ui.colored_label(Color32::YELLOW, format!("~ [{pk_label}]"));
                     for change in &row.changes {
-                        ui.label(format!(
-                            "  {}: {} → {}",
-                            change.column,
-                            change.old_value.display(),
-                            change.new_value.display()
-                        ));
+                        ui.horizontal(|ui| {
+                            ui.label(format!("  {}:", change.column));
+                            ui.colored_label(
+                                Color32::from_rgb(255, 100, 100),
+                                change.old_value.display(),
+                            );
+                            ui.label("→");
+                            ui.colored_label(
+                                Color32::from_rgb(100, 255, 100),
+                                change.new_value.display(),
+                            );
+                        });
                     }
                 }
             });

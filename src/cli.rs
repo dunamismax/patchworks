@@ -10,8 +10,12 @@ use std::path::Path;
 use crate::db::differ::diff_databases;
 use crate::db::inspector::inspect_database;
 use crate::db::snapshot::SnapshotStore;
-use crate::db::types::{DatabaseSummary, SchemaDiff, TableDataDiff};
+use crate::db::types::{
+    ConflictKind, DatabaseSummary, DiffSummary, MergeSource, SchemaDiff, SemanticChange,
+    TableDataDiff, ThreeWayMergeResult,
+};
 use crate::diff::export::write_export;
+use crate::diff::merge::three_way_merge;
 use crate::error::Result;
 
 /// Exit code: operation succeeded with no differences or no actionable result.
@@ -55,11 +59,42 @@ pub fn run_diff<W: Write>(
     let has_changes = has_any_changes(&diff.schema, &diff.data_diffs);
 
     match format {
-        OutputFormat::Human => write_diff_human(writer, &diff.schema, &diff.data_diffs)?,
-        OutputFormat::Json => write_diff_json(writer, &diff.schema, &diff.data_diffs)?,
+        OutputFormat::Human => write_diff_human(
+            writer,
+            &diff.schema,
+            &diff.data_diffs,
+            &diff.summary,
+            &diff.semantic_changes,
+        )?,
+        OutputFormat::Json => write_diff_json(
+            writer,
+            &diff.schema,
+            &diff.data_diffs,
+            &diff.summary,
+            &diff.semantic_changes,
+        )?,
     }
 
     Ok(if has_changes { EXIT_DIFF } else { EXIT_OK })
+}
+
+/// Runs the `merge` subcommand: three-way merge of two databases against a common ancestor.
+pub fn run_merge<W: Write>(
+    writer: &mut W,
+    ancestor_path: &Path,
+    left_path: &Path,
+    right_path: &Path,
+    format: OutputFormat,
+) -> Result<i32> {
+    let result = three_way_merge(ancestor_path, left_path, right_path)?;
+    let has_conflicts = !result.conflicts.is_empty();
+
+    match format {
+        OutputFormat::Human => write_merge_human(writer, &result)?,
+        OutputFormat::Json => write_merge_json(writer, &result)?,
+    }
+
+    Ok(if has_conflicts { EXIT_DIFF } else { EXIT_OK })
 }
 
 /// Runs the `export` subcommand: generates SQL migration from left to right.
@@ -224,8 +259,56 @@ fn write_diff_human<W: Write>(
     writer: &mut W,
     schema: &SchemaDiff,
     data_diffs: &[TableDataDiff],
+    summary: &DiffSummary,
+    semantic_changes: &[SemanticChange],
 ) -> Result<()> {
     let mut any_output = false;
+
+    // Semantic changes (renames, compatible type shifts)
+    if !semantic_changes.is_empty() {
+        writeln!(writer, "Semantic analysis:")?;
+        for change in semantic_changes {
+            match change {
+                SemanticChange::TableRename {
+                    left_name,
+                    right_name,
+                    confidence,
+                } => {
+                    writeln!(
+                        writer,
+                        "  ⟳ table rename: {} → {} (confidence: {}%)",
+                        left_name, right_name, confidence
+                    )?;
+                }
+                SemanticChange::ColumnRename {
+                    table_name,
+                    left_column,
+                    right_column,
+                    confidence,
+                } => {
+                    writeln!(
+                        writer,
+                        "  ⟳ column rename in {}: {} → {} (confidence: {}%)",
+                        table_name, left_column, right_column, confidence
+                    )?;
+                }
+                SemanticChange::CompatibleTypeShift {
+                    table_name,
+                    column_name,
+                    left_type,
+                    right_type,
+                } => {
+                    writeln!(
+                        writer,
+                        "  ≈ compatible type shift in {}.{}: {} → {}",
+                        table_name, column_name, left_type, right_type
+                    )?;
+                }
+            }
+        }
+        writeln!(writer)?;
+        any_output = true;
+    }
 
     // Schema changes
     if !schema.added_tables.is_empty() {
@@ -326,7 +409,46 @@ fn write_diff_human<W: Write>(
             "table {}: +{} added, -{} removed, ~{} modified, {} unchanged",
             diff.table_name, stats.added, stats.removed, stats.modified, stats.unchanged
         )?;
+
+        // Column-level detail for modified rows
+        for row_mod in &diff.modified_rows {
+            let pk = row_mod
+                .primary_key
+                .iter()
+                .map(|v| v.display())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let changes = row_mod
+                .changes
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{}: {} → {}",
+                        c.column,
+                        c.old_value.display(),
+                        c.new_value.display()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(writer, "  [{}] {}", pk, changes)?;
+        }
         any_output = true;
+    }
+
+    // Summary
+    if any_output && (summary.tables_compared > 0 || summary.tables_added > 0) {
+        writeln!(writer)?;
+        writeln!(
+            writer,
+            "Summary: {} tables compared, {} changed, +{} added, -{} removed, ~{} modified rows, {} cells changed",
+            summary.tables_compared,
+            summary.tables_changed,
+            summary.total_rows_added,
+            summary.total_rows_removed,
+            summary.total_rows_modified,
+            summary.total_cells_changed,
+        )?;
     }
 
     if !any_output {
@@ -340,18 +462,141 @@ fn write_diff_json<W: Write>(
     writer: &mut W,
     schema: &SchemaDiff,
     data_diffs: &[TableDataDiff],
+    summary: &DiffSummary,
+    semantic_changes: &[SemanticChange],
 ) -> Result<()> {
     #[derive(serde::Serialize)]
     struct DiffOutput<'a> {
         schema: &'a SchemaDiff,
         data: &'a [TableDataDiff],
+        summary: &'a DiffSummary,
+        semantic_changes: &'a [SemanticChange],
     }
 
     let output = DiffOutput {
         schema,
         data: data_diffs,
+        summary,
+        semantic_changes,
     };
     let json = serde_json::to_string_pretty(&output)?;
+    writeln!(writer, "{json}")?;
+    Ok(())
+}
+
+fn write_merge_human<W: Write>(writer: &mut W, result: &ThreeWayMergeResult) -> Result<()> {
+    let summary = &result.summary;
+
+    writeln!(
+        writer,
+        "Three-way merge: {} tables resolved, {} tables with conflicts",
+        summary.tables_resolved, summary.tables_conflicted
+    )?;
+
+    if !result.resolved_tables.is_empty() {
+        writeln!(writer)?;
+        writeln!(writer, "Resolved tables:")?;
+        for table in &result.resolved_tables {
+            let source_label = match table.source {
+                MergeSource::Left => "left only",
+                MergeSource::Right => "right only",
+                MergeSource::Both => "both sides",
+                MergeSource::Neither => "unchanged",
+            };
+            let changes = table.row_changes.added_rows.len()
+                + table.row_changes.removed_row_keys.len()
+                + table.row_changes.modified_rows.len();
+            if changes > 0 {
+                writeln!(
+                    writer,
+                    "  ✓ {} (source: {}, {} row changes)",
+                    table.table_name, source_label, changes
+                )?;
+            } else {
+                writeln!(
+                    writer,
+                    "  ✓ {} (source: {})",
+                    table.table_name, source_label
+                )?;
+            }
+        }
+    }
+
+    if !result.conflicts.is_empty() {
+        writeln!(writer)?;
+        writeln!(writer, "Conflicts:")?;
+        for conflict in &result.conflicts {
+            match &conflict.kind {
+                ConflictKind::SchemaConflict { .. } => {
+                    writeln!(
+                        writer,
+                        "  ✗ {} — schema conflict (both sides modified differently)",
+                        conflict.table_name
+                    )?;
+                }
+                ConflictKind::RowConflict { primary_key, .. } => {
+                    let pk = primary_key
+                        .iter()
+                        .map(|v| v.display())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    writeln!(
+                        writer,
+                        "  ✗ {} [{}] — row conflict (both sides changed same row differently)",
+                        conflict.table_name, pk
+                    )?;
+                }
+                ConflictKind::DeleteModifyConflict {
+                    primary_key,
+                    deleted_by,
+                    ..
+                } => {
+                    let pk = primary_key
+                        .iter()
+                        .map(|v| v.display())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    let deleter = match deleted_by {
+                        MergeSource::Left => "left",
+                        MergeSource::Right => "right",
+                        _ => "unknown",
+                    };
+                    writeln!(
+                        writer,
+                        "  ✗ {} [{}] — delete/modify conflict ({} deleted, other modified)",
+                        conflict.table_name, pk, deleter
+                    )?;
+                }
+                ConflictKind::TableDeleteConflict { deleted_by } => {
+                    let deleter = match deleted_by {
+                        MergeSource::Left => "left",
+                        MergeSource::Right => "right",
+                        _ => "unknown",
+                    };
+                    writeln!(
+                        writer,
+                        "  ✗ {} — table deleted by {} while modified by other side",
+                        conflict.table_name, deleter
+                    )?;
+                }
+            }
+        }
+    }
+
+    if summary.row_conflicts > 0 || summary.schema_conflicts > 0 {
+        writeln!(writer)?;
+        writeln!(
+            writer,
+            "Total: {} row conflicts, {} schema conflicts",
+            summary.row_conflicts, summary.schema_conflicts
+        )?;
+    }
+
+    Ok(())
+}
+
+fn write_merge_json<W: Write>(writer: &mut W, result: &ThreeWayMergeResult) -> Result<()> {
+    let json = serde_json::to_string_pretty(result)?;
     writeln!(writer, "{json}")?;
     Ok(())
 }
