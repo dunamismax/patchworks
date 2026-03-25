@@ -7,6 +7,7 @@ from patchworks.db.inspector import (
     inspect_table,
     read_rows,
 )
+from patchworks.db.snapshot import SnapshotInfo, SnapshotStore
 from patchworks.db.types import (
     CellChange,
     ColumnInfo,
@@ -34,6 +35,8 @@ __all__ = [
     "IndexSchemaDiff",
     "RowDiff",
     "SchemaDiff",
+    "SnapshotInfo",
+    "SnapshotStore",
     "TableDataDiff",
     "TableInfo",
     "TableSchemaDiff",

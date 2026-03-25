@@ -7,20 +7,28 @@ dispatch layer — no business logic lives here.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
-    from patchworks.db.types import DatabaseSummary
+    from patchworks.db.types import DatabaseDiff, DatabaseSummary, TableDataDiff
 
 # ---------------------------------------------------------------------------
-# Subcommand handlers (stubs)
+# Exit codes
+# ---------------------------------------------------------------------------
+
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_DIFFERENCES = 2
+
+# ---------------------------------------------------------------------------
+# Subcommand handlers
 # ---------------------------------------------------------------------------
 
 
 def _cmd_inspect(args: argparse.Namespace) -> int:
     """Inspect a SQLite database."""
-    import json
     from pathlib import Path
 
     from patchworks.db.inspector import inspect_database
@@ -28,61 +36,207 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
     db_path = Path(args.database)
     if not db_path.exists():
         print(f"error: database not found: {db_path}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     try:
         summary = inspect_database(db_path)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
-        return 1
+        return EXIT_ERROR
 
     if args.format == "json":
         print(json.dumps(_summary_to_dict(summary), indent=2))
     else:
         _print_summary_human(summary)
-    return 0
+    return EXIT_OK
 
 
 def _cmd_diff(args: argparse.Namespace) -> int:
     """Diff two SQLite databases."""
-    _ = args
-    print("diff: not yet implemented")
-    return 0
+    from pathlib import Path
+
+    from patchworks.db.differ import diff_databases
+
+    left = Path(args.left)
+    right = Path(args.right)
+
+    for p, label in ((left, "left"), (right, "right")):
+        if not p.exists():
+            print(f"error: {label} database not found: {p}", file=sys.stderr)
+            return EXIT_ERROR
+
+    try:
+        result = diff_databases(left, right)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if args.format == "json":
+        print(json.dumps(_diff_to_dict(result), indent=2))
+    else:
+        _print_diff_human(result)
+
+    return EXIT_DIFFERENCES if result.has_changes else EXIT_OK
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
     """Export a SQL migration between two databases."""
-    _ = args
-    print("export: not yet implemented")
-    return 0
+    from pathlib import Path
+
+    from patchworks.db.differ import diff_databases
+    from patchworks.diff.export import write_export
+
+    left = Path(args.left)
+    right = Path(args.right)
+
+    for p, label in ((left, "left"), (right, "right")):
+        if not p.exists():
+            print(f"error: {label} database not found: {p}", file=sys.stderr)
+            return EXIT_ERROR
+
+    try:
+        result = diff_databases(left, right)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if args.output:
+        try:
+            with open(args.output, "w") as f:
+                write_export(result, f, right_path=right)
+        except OSError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+    else:
+        write_export(result, sys.stdout, right_path=right)  # type: ignore[arg-type]
+
+    return EXIT_OK
 
 
 def _cmd_snapshot(args: argparse.Namespace) -> int:
     """Manage database snapshots."""
-    _ = args
-    print("snapshot: not yet implemented")
-    return 0
+    sub = getattr(args, "snapshot_command", None)
+    if not sub:
+        print(
+            "error: specify a snapshot subcommand: save, list, delete",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    if sub == "save":
+        return _cmd_snapshot_save(args)
+    elif sub == "list":
+        return _cmd_snapshot_list(args)
+    elif sub == "delete":
+        return _cmd_snapshot_delete(args)
+    else:
+        print(f"error: unknown snapshot command: {sub}", file=sys.stderr)
+        return EXIT_ERROR
+
+
+def _cmd_snapshot_save(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from patchworks.db.snapshot import SnapshotStore
+
+    db_path = Path(args.database)
+    if not db_path.exists():
+        print(f"error: database not found: {db_path}", file=sys.stderr)
+        return EXIT_ERROR
+
+    try:
+        store = SnapshotStore()
+        info = store.save(db_path, name=getattr(args, "name", None))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    print(f"Snapshot saved: {info.id}")
+    if info.name:
+        print(f"  Name: {info.name}")
+    print(f"  Source: {info.source}")
+    print(f"  Size: {info.size_bytes} bytes")
+    print(f"  Created: {info.created_at}")
+    return EXIT_OK
+
+
+def _cmd_snapshot_list(args: argparse.Namespace) -> int:
+    from patchworks.db.snapshot import SnapshotStore
+
+    try:
+        store = SnapshotStore()
+        snapshots = store.list(source=getattr(args, "source", None))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+
+    if fmt == "json":
+        data = [
+            {
+                "id": s.id,
+                "source": s.source,
+                "name": s.name,
+                "created_at": s.created_at,
+                "file_path": s.file_path,
+                "size_bytes": s.size_bytes,
+            }
+            for s in snapshots
+        ]
+        print(json.dumps(data, indent=2))
+    else:
+        if not snapshots:
+            print("No snapshots found.")
+        else:
+            for s in snapshots:
+                label = f" ({s.name})" if s.name else ""
+                print(f"{s.id}{label}")
+                print(f"  Source: {s.source}")
+                print(f"  Size: {s.size_bytes} bytes")
+                print(f"  Created: {s.created_at}")
+                print()
+
+    return EXIT_OK
+
+
+def _cmd_snapshot_delete(args: argparse.Namespace) -> int:
+    from patchworks.db.snapshot import SnapshotStore
+
+    try:
+        store = SnapshotStore()
+        deleted = store.delete(args.uuid)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if deleted:
+        print(f"Snapshot deleted: {args.uuid}")
+        return EXIT_OK
+    else:
+        print(f"error: snapshot not found: {args.uuid}", file=sys.stderr)
+        return EXIT_ERROR
 
 
 def _cmd_merge(args: argparse.Namespace) -> int:
     """Three-way merge of SQLite databases."""
     _ = args
     print("merge: not yet implemented")
-    return 0
+    return EXIT_OK
 
 
 def _cmd_migrate(args: argparse.Namespace) -> int:
     """Migration workflow management."""
     _ = args
     print("migrate: not yet implemented")
-    return 0
+    return EXIT_OK
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
     """Launch the local web UI."""
     _ = args
     print("serve: not yet implemented")
-    return 0
+    return EXIT_OK
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +384,11 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# ---------------------------------------------------------------------------
+# Formatting helpers
+# ---------------------------------------------------------------------------
+
+
 def _summary_to_dict(summary: DatabaseSummary) -> dict[str, object]:
     """Convert a :class:`DatabaseSummary` to a JSON-friendly dict."""
     return {
@@ -330,6 +489,157 @@ def _print_summary_human(summary: DatabaseSummary) -> None:
             print(f"    {col.name} {col.type}".rstrip())
 
 
+def _diff_to_dict(diff: DatabaseDiff) -> dict[str, Any]:
+    """Convert a :class:`DatabaseDiff` to a JSON-friendly dict."""
+    sd = diff.schema_diff
+    return {
+        "left_path": diff.left_path,
+        "right_path": diff.right_path,
+        "has_changes": diff.has_changes,
+        "schema": {
+            "tables_added": [t.name for t in sd.tables_added],
+            "tables_removed": [t.name for t in sd.tables_removed],
+            "tables_modified": [
+                {
+                    "name": tm.table_name,
+                    "columns_added": [c.name for c in tm.columns_added],
+                    "columns_removed": [c.name for c in tm.columns_removed],
+                    "columns_modified": [
+                        {"name": old.name, "old_type": old.type, "new_type": new.type}
+                        for old, new in tm.columns_modified
+                    ],
+                }
+                for tm in sd.tables_modified
+            ],
+            "indexes_added": [i.name for i in sd.indexes_added],
+            "indexes_removed": [i.name for i in sd.indexes_removed],
+            "indexes_modified": [i.name for i in sd.indexes_modified],
+            "triggers_added": [t.name for t in sd.triggers_added],
+            "triggers_removed": [t.name for t in sd.triggers_removed],
+            "triggers_modified": [t.name for t in sd.triggers_modified],
+            "views_added": [v.name for v in sd.views_added],
+            "views_removed": [v.name for v in sd.views_removed],
+            "views_modified": [v.name for v in sd.views_modified],
+        },
+        "data": [_table_data_diff_to_dict(td) for td in diff.table_data_diffs],
+        "warnings": list(diff.warnings),
+    }
+
+
+def _table_data_diff_to_dict(td: TableDataDiff) -> dict[str, Any]:
+    """Convert a :class:`TableDataDiff` to a JSON-friendly dict."""
+    return {
+        "table_name": td.table_name,
+        "key_columns": list(td.key_columns),
+        "rows_added": td.rows_added,
+        "rows_removed": td.rows_removed,
+        "rows_modified": td.rows_modified,
+        "row_diffs": [
+            {
+                "kind": rd.kind,
+                "key": list(rd.key),
+                "old_values": _serialize_row(rd.old_values),
+                "new_values": _serialize_row(rd.new_values),
+                "cell_changes": [
+                    {
+                        "column": cc.column,
+                        "old_value": _serialize_value(cc.old_value),
+                        "new_value": _serialize_value(cc.new_value),
+                    }
+                    for cc in rd.cell_changes
+                ],
+            }
+            for rd in td.row_diffs
+        ],
+        "warnings": list(td.warnings),
+    }
+
+
+def _serialize_row(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Serialize a row dict, converting bytes to hex strings."""
+    if row is None:
+        return None
+    return {k: _serialize_value(v) for k, v in row.items()}
+
+
+def _serialize_value(val: Any) -> Any:
+    """Serialize a value for JSON output."""
+    if isinstance(val, bytes):
+        return val.hex()
+    return val
+
+
+def _print_diff_human(diff: DatabaseDiff) -> None:
+    """Print a human-readable diff to stdout."""
+    sd = diff.schema_diff
+
+    if not diff.has_changes:
+        print("No differences found.")
+        return
+
+    # Schema changes
+    if sd.has_changes:
+        print("Schema changes:")
+        for t in sd.tables_added:
+            print(f"  + Table: {t.name}")
+        for t in sd.tables_removed:
+            print(f"  - Table: {t.name}")
+        for tm in sd.tables_modified:
+            print(f"  ~ Table: {tm.table_name}")
+            for c in tm.columns_added:
+                print(f"      + Column: {c.name} {c.type}")
+            for c in tm.columns_removed:
+                print(f"      - Column: {c.name} {c.type}")
+            for old, new in tm.columns_modified:
+                print(f"      ~ Column: {old.name} ({old.type} -> {new.type})")
+        for i in sd.indexes_added:
+            print(f"  + Index: {i.name}")
+        for i in sd.indexes_removed:
+            print(f"  - Index: {i.name}")
+        for im in sd.indexes_modified:
+            print(f"  ~ Index: {im.name}")
+        for t in sd.triggers_added:
+            print(f"  + Trigger: {t.name}")
+        for t in sd.triggers_removed:
+            print(f"  - Trigger: {t.name}")
+        for tm in sd.triggers_modified:
+            print(f"  ~ Trigger: {tm.name}")
+        for v in sd.views_added:
+            print(f"  + View: {v.name}")
+        for v in sd.views_removed:
+            print(f"  - View: {v.name}")
+        for vm in sd.views_modified:
+            print(f"  ~ View: {vm.name}")
+        print()
+
+    # Data changes
+    for td in diff.table_data_diffs:
+        if not (td.rows_added or td.rows_removed or td.rows_modified):
+            continue
+        print(
+            f"Table {td.table_name}: "
+            f"+{td.rows_added} -{td.rows_removed} ~{td.rows_modified} rows"
+        )
+        for rd in td.row_diffs:
+            key_str = ", ".join(str(v) for v in rd.key)
+            if rd.kind == "added":
+                print(f"  + [{key_str}]")
+            elif rd.kind == "removed":
+                print(f"  - [{key_str}]")
+            elif rd.kind == "modified":
+                changes = ", ".join(
+                    f"{cc.column}: {cc.old_value!r} -> {cc.new_value!r}"
+                    for cc in rd.cell_changes
+                )
+                print(f"  ~ [{key_str}] {changes}")
+
+    # Warnings
+    if diff.warnings:
+        print()
+        for w in diff.warnings:
+            print(f"warning: {w}")
+
+
 def _get_version() -> str:
     from patchworks import __version__
 
@@ -348,6 +658,6 @@ def main(argv: list[str] | None = None) -> NoReturn:
 
     if not args.command:
         parser.print_help()
-        sys.exit(0)
+        sys.exit(EXIT_OK)
 
     raise SystemExit(args.func(args))

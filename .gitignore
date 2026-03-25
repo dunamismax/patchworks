@@ -54,3 +54,4 @@ Thumbs.db
 
 # Type checking
 .pyright/
+target/
