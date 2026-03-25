@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
+
+if TYPE_CHECKING:
+    from patchworks.db.types import DatabaseSummary
 
 # ---------------------------------------------------------------------------
 # Subcommand handlers (stubs)
@@ -17,8 +20,26 @@ from typing import NoReturn
 
 def _cmd_inspect(args: argparse.Namespace) -> int:
     """Inspect a SQLite database."""
-    _ = args
-    print("inspect: not yet implemented")
+    import json
+    from pathlib import Path
+
+    from patchworks.db.inspector import inspect_database
+
+    db_path = Path(args.database)
+    if not db_path.exists():
+        print(f"error: database not found: {db_path}", file=sys.stderr)
+        return 1
+
+    try:
+        summary = inspect_database(db_path)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.format == "json":
+        print(json.dumps(_summary_to_dict(summary), indent=2))
+    else:
+        _print_summary_human(summary)
     return 0
 
 
@@ -207,6 +228,106 @@ def _build_parser() -> argparse.ArgumentParser:
     p_serve.set_defaults(func=_cmd_serve)
 
     return parser
+
+
+def _summary_to_dict(summary: DatabaseSummary) -> dict[str, object]:
+    """Convert a :class:`DatabaseSummary` to a JSON-friendly dict."""
+    return {
+        "path": summary.path,
+        "page_size": summary.page_size,
+        "page_count": summary.page_count,
+        "journal_mode": summary.journal_mode,
+        "tables": [
+            {
+                "name": t.name,
+                "columns": [
+                    {
+                        "name": c.name,
+                        "type": c.type,
+                        "notnull": c.notnull,
+                        "default_value": c.default_value,
+                        "primary_key": c.primary_key,
+                    }
+                    for c in t.columns
+                ],
+                "primary_key_columns": list(t.primary_key_columns),
+                "without_rowid": t.without_rowid,
+                "row_count": t.row_count,
+                "indexes": [
+                    {
+                        "name": i.name,
+                        "table_name": i.table_name,
+                        "unique": i.unique,
+                        "columns": list(i.columns),
+                        "partial": i.partial,
+                        "sql": i.sql,
+                    }
+                    for i in t.indexes
+                ],
+                "triggers": [
+                    {"name": tr.name, "table_name": tr.table_name, "sql": tr.sql}
+                    for tr in t.triggers
+                ],
+                "sql": t.sql,
+            }
+            for t in summary.tables
+        ],
+        "views": [
+            {
+                "name": v.name,
+                "columns": [
+                    {
+                        "name": c.name,
+                        "type": c.type,
+                        "notnull": c.notnull,
+                        "default_value": c.default_value,
+                        "primary_key": c.primary_key,
+                    }
+                    for c in v.columns
+                ],
+                "sql": v.sql,
+            }
+            for v in summary.views
+        ],
+    }
+
+
+def _print_summary_human(summary: DatabaseSummary) -> None:
+    """Print a human-readable summary to stdout."""
+    print(f"Database: {summary.path}")
+    print(f"Page size: {summary.page_size}")
+    print(f"Pages: {summary.page_count}")
+    print(f"Journal mode: {summary.journal_mode}")
+    print(f"Tables: {len(summary.tables)}")
+    print(f"Views: {len(summary.views)}")
+    print(f"Indexes: {len(summary.indexes)}")
+    print(f"Triggers: {len(summary.triggers)}")
+
+    for table in summary.tables:
+        print(f"\n  Table: {table.name} ({table.row_count} rows)")
+        if table.without_rowid:
+            print("    WITHOUT ROWID")
+        if table.primary_key_columns:
+            print(f"    PK: {', '.join(table.primary_key_columns)}")
+        for col in table.columns:
+            parts = [f"    {col.name} {col.type}".rstrip()]
+            if col.notnull:
+                parts.append("NOT NULL")
+            if col.default_value is not None:
+                parts.append(f"DEFAULT {col.default_value}")
+            if col.primary_key:
+                parts.append(f"PK({col.primary_key})")
+            print(" ".join(parts))
+        for idx in table.indexes:
+            uniq = " UNIQUE" if idx.unique else ""
+            print(f"    Index: {idx.name}{uniq} ({', '.join(idx.columns)})")
+        for trigger in table.triggers:
+            print(f"    Trigger: {trigger.name}")
+
+    for view in summary.views:
+        print(f"\n  View: {view.name}")
+        for col in view.columns:
+            print(f"    {col.name} {col.type}".rstrip())
 
 
 def _get_version() -> str:

@@ -53,15 +53,15 @@ def test_version_flag() -> None:
     assert "0.1.0" in result.stdout
 
 
-def test_inspect_stub() -> None:
-    """``patchworks inspect`` stub returns 0."""
+def test_inspect_runs() -> None:
+    """``patchworks inspect /dev/null`` returns 0 with output."""
     result = subprocess.run(
         [sys.executable, "-m", "patchworks", "inspect", "/dev/null"],
         capture_output=True,
         text=True,
     )
     assert result.returncode == 0
-    assert "not yet implemented" in result.stdout
+    assert "Database:" in result.stdout
 
 
 def test_no_args_shows_help() -> None:
