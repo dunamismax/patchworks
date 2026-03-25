@@ -1,0 +1,56 @@
+[project]
+name = "patchworks"
+version = "0.1.0"
+description = "Git-style diffs for SQLite databases"
+readme = "README.md"
+authors = [{ name = "dunamismax", email = "dunamismax@tutamail.com" }]
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = []
+
+[project.scripts]
+patchworks = "patchworks:cli_main"
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["ruff>=0.11.0", "pyright>=1.1.0", "pytest>=8.0", "pytest-cov>=6.0", "pre-commit>=4.0"]
+
+# -- ruff ------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "TCH", # flake8-type-checking
+    "RUF", # ruff-specific
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["patchworks"]
+
+# -- pyright ----------------------------------------------------------------
+
+[tool.pyright]
+pythonVersion = "3.12"
+pythonPlatform = "All"
+typeCheckingMode = "standard"
+include = ["src"]
+
+# -- pytest -----------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
