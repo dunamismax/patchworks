@@ -4,7 +4,7 @@
 
 **Git-style diffs for SQLite databases.**
 
-Patchworks is a CLI tool that treats SQLite databases the way `git diff` treats source code. Open one database to inspect it. Open two to see exactly what changed — every schema modification, every row added, removed, or altered — then generate the SQL to reconcile them.
+Patchworks is a CLI tool that treats SQLite databases the way `git diff` treats source code. Open one database to inspect it. Open two to see exactly what changed - every schema modification, every row added, removed, or altered - then generate the SQL to reconcile them.
 
 No cloud. No account. No daemon. Your databases, the truth.
 
@@ -14,7 +14,7 @@ No cloud. No account. No daemon. Your databases, the truth.
 
 Every team that ships software backed by SQLite eventually hits the same wall: "what actually changed in this database?" Maybe it's a production config store that drifted. Maybe it's a mobile app's local database after a migration. Maybe it's two copies of the same file and nobody remembers which one is current.
 
-The existing options are grim — hex editors, ad-hoc scripts, manually eyeballing `sqlite3` output. Patchworks replaces all of that with a purpose-built comparison engine.
+The existing options are grim - hex editors, ad-hoc scripts, manually eyeballing `sqlite3` output. Patchworks replaces all of that with a purpose-built comparison engine.
 
 ## Target feature set
 
@@ -39,14 +39,14 @@ The existing options are grim — hex editors, ad-hoc scripts, manually eyeballi
 
 ## Tech stack
 
-- **Python** (3.12+) — CLI, orchestration, diff logic, export generation, all user-facing tooling
-- **Go** — reserved for performance-critical components if profiling justifies it
-- **uv** — package and environment management
-- **ruff** — linting and formatting
-- **Pyright** — type checking
-- **pytest** — testing
-- **sqlite3** — stdlib SQLite access (read-only)
-- **FastAPI + htmx** — local web UI (later phase)
+- **Python** (3.12+) - CLI, orchestration, diff logic, export generation, all user-facing tooling
+- **Go** - reserved for performance-critical components if profiling justifies it
+- **uv** - package and environment management
+- **ruff** - linting and formatting
+- **Pyright** - type checking
+- **pytest** - testing
+- **sqlite3** - stdlib SQLite access (read-only)
+- **FastAPI + htmx** - local web UI (later phase)
 
 ## Install
 
@@ -227,7 +227,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, conventions, and how to get 
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
 
 ## Links
 

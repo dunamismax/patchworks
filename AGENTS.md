@@ -7,70 +7,63 @@ Secondary agent-oriented project memory for Patchworks. `BUILD.md` is the primar
 ## Project
 
 - Name: Patchworks
-- Tagline: Git-style visual diffs for SQLite databases
-- Stack: Rust 2021, egui/eframe, rusqlite (bundled), serde, clap, tracing, criterion, proptest
-- Package: crates.io `patchworks` (`0.3.0`)
+- Tagline: Git-style diffs for SQLite databases
+- Stack: Python 3.12+, stdlib sqlite3, argparse, uv, ruff, pyright, pytest
+- Go: reserved for performance-critical hot paths (not yet present)
+- Web UI: FastAPI + htmx (later phase)
 - License: MIT
 
 ## Vision
 
-Patchworks is evolving from a desktop inspection tool into a complete SQLite lifecycle platform: desktop GUI today, headless CLI next, then intelligent diffs, migration management, plugins, team collaboration, and CI/CD integration. See BUILD.md phases 0-12 for the full roadmap.
+Patchworks is a CLI-first SQLite comparison and migration tool. The CLI is the primary surface. A local web UI via FastAPI + htmx replaces the former desktop GUI as a later phase. See BUILD.md phases 0-13 for the full roadmap.
 
 ## Architecture
 
 ```
-src/main.rs       → CLI entrypoint and subcommand dispatch
-src/cli.rs        → Headless CLI command implementations
-src/app.rs        → Application coordinator, background task management, keyboard shortcuts
-src/db/           → SQLite inspection, snapshots, diff orchestration, types
-src/diff/         → Schema diffing, streaming row diffs, SQL export
-src/state/        → UI-facing workspace state, recent-files persistence
-src/ui/           → egui rendering layer (presentation only)
-tests/            → Integration tests, property tests, fixtures
-benches/          → Criterion benchmarks
+src/patchworks/
+  __init__.py       Package root
+  __main__.py       CLI entrypoint
+  cli.py            Subcommand dispatch (argparse) - thin layer, no business logic
+  db/               SQLite inspection, snapshots, diff orchestration, migration persistence
+  diff/             Schema diffing, streaming row diffs, SQL export, semantic analysis, merge
+tests/              All test modules
+go/                 (future) Go acceleration components
 ```
 
 Key design decisions:
-- `ui/` renders. `state/` stores. `db/` + `diff/` own data logic. `app.rs` coordinates.
-- Background tasks use `mpsc` channels — no async runtime.
-- Stale background work is superseded by dropping receivers, not cooperatively cancelled.
+- `cli.py` dispatches. `db/` and `diff/` own data logic. No business logic in the CLI module.
 - SQL export favors correctness over minimality (temp-table rebuild, FK guards, trigger preservation).
+- Streaming, bounded-memory approach for diff and export operations.
+- CLI and any future web UI share the same backend functions. No forked logic.
 
 ## Conventions
 
-- `thiserror` in library code, `anyhow` in `main.rs`.
-- No `unwrap()` outside tests.
+- Type hints on all public functions. Pyright must pass clean.
 - Prefer streaming over materializing full tables.
 - Keep `BUILD.md` current in the same pass as code changes.
-- Public types and functions carry doc comments.
+- No `assert` outside tests for control flow.
 
 ## Verification
 
 ```bash
-cargo build
-cargo test
-cargo nextest run
-cargo fmt --all --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo bench --no-run
-cargo deny check
-cargo run -- --help
+uv sync
+ruff check .
+ruff format --check .
+pyright
+pytest
 ```
 
-## Current State (2026-03-24)
+## Current state (2026-03-25)
 
-**Released (v0.3.0) and still active.** Phases 0-6 are shipped. Phase 7 (advanced diff intelligence) is the next build step.
+**Rewrite in progress.** The previous Rust implementation shipped through v0.3.0. The project is being rebuilt in Python with Go reserved for performance-critical paths. Currently at Phase 0 - scaffold and bootstrap.
 
-What works: inspect, browse, diff (schema + rows), snapshots, SQL export with FK safety and trigger preservation, background processing with progress, streaming bounded-memory export to file, headless CLI with subcommands for inspect/diff/export/snapshot, JSON output, CI-friendly exit codes, schema browser with DDL preview, table search/filter, keyboard shortcuts (⌘1-6 views, ⌘D diff), dark/light/system theme, recent files with quick reopen, collapsible diff sections with summary statistics.
+Previous Rust capabilities that the rewrite targets for parity: inspect, browse, diff (schema + rows), snapshots, SQL export with FK safety and trigger preservation, headless CLI with subcommands, JSON output, CI-friendly exit codes, streaming bounded-memory export, semantic diff awareness, three-way merge, migration workflow management.
 
-Known limits: views are inspect-only, no explicit cancel, GUI preview path still collects full export in memory, best-effort on live/WAL databases (read-only access; concurrent writes may produce inconsistent results).
+Known limits carried forward: views are inspect-only, best-effort on live/WAL databases (read-only access; concurrent writes may produce inconsistent results), encrypted databases not supported.
 
-## Known Caveats
+## Known caveats
 
 - SQL export correctness > minimality.
-- No explicit cancel — stale work is dropped.
-- Live/WAL/encrypted databases are best-effort (read-only; concurrent writes may cause inconsistent reads).
+- Live/WAL/encrypted databases are best-effort.
 - `~/.patchworks/` is local machine state, not project state.
-- `cargo bench --no-run` is slow (bundled SQLite compiled in release mode).
-- BUILD.md is the primary handoff — read it before touching export logic or verification workflows.
-- `write_export` is the bounded-memory path; `export_diff_as_sql` still collects to `String` for GUI preview.
+- BUILD.md is the primary handoff - read it before touching export logic or verification workflows.

@@ -1,224 +1,208 @@
 # Patchworks Architecture
 
-This document describes the technical architecture of Patchworks in enough detail for a new contributor or agent to understand the codebase, make informed changes, and avoid breaking the invariants that keep the tool trustworthy.
+Technical architecture for the Python + Go rewrite. Written for a developer picking up the repo cold.
 
-## Design philosophy
+## Stack overview
 
-Patchworks is built on three architectural principles:
+- **Python** (3.12+) is the primary language. CLI, orchestration, diff logic, export generation, and all user-facing tooling live in Python.
+- **Go** is reserved for performance-critical hot paths. It will only be introduced when profiling shows Python is the bottleneck on a specific operation. Until then, Go does not exist in this repo.
+- **SQLite** is accessed through Python's stdlib `sqlite3` module in read-only mode. If Go components are added later, they use `modernc.org/sqlite` (no CGO).
+- **FastAPI + htmx** powers the local web UI in a later phase. The CLI ships first.
 
-1. **Layered separation.** UI rendering, application state, and data logic live in distinct modules with clear dependency directions. `ui/` depends on `state/`, which depends on `db/` and `diff/`. Nothing flows backwards.
+## Directory layout
 
-2. **Background-first I/O.** Every operation that touches SQLite runs on a background thread. The UI thread never blocks on database I/O. Results flow back through `mpsc` channels and are applied on the next UI tick.
-
-3. **Correctness over performance.** The diff engine and SQL export prioritize semantic correctness. A heavier migration that preserves all schema objects and handles edge cases correctly is preferred over a minimal one that might break.
-
-## Module map
-
+```text
+src/patchworks/
+  __init__.py              Package root
+  __main__.py              CLI entrypoint (python -m patchworks)
+  cli.py                   Subcommand dispatch and implementations (argparse)
+  db/
+    __init__.py
+    inspector.py           Schema and row reading with pagination
+    differ.py              High-level diff orchestration
+    snapshot.py            Local snapshot store (~/.patchworks/)
+    migration.py           Migration chain persistence and conflict detection
+    types.py               Core data types
+  diff/
+    __init__.py
+    schema.py              Schema-level diffing
+    data.py                Streaming row-level diffing
+    export.py              SQL migration generation
+    semantic.py            Semantic diff awareness (renames, type shifts)
+    merge.py               Three-way merge and conflict detection
+    migration.py           Migration generation, validation, squashing
+tests/
+  test_inspector.py
+  test_differ.py
+  test_schema_diff.py
+  test_data_diff.py
+  test_export.py
+  test_snapshot.py
+  test_cli.py
+  test_merge.py
+  test_migration.py
+  test_semantic.py
+go/                        (future, only when profiling justifies it)
+pyproject.toml             Single project manifest
+.python-version            Pinned Python version
+.pre-commit-config.yaml    Pre-commit hooks (ruff, pyright)
 ```
-patchworks (single crate)
-│
-├── src/main.rs           CLI entrypoint
-├── src/lib.rs            Library module exports
-├── src/app.rs            Application coordinator
-├── src/error.rs          Shared error types
-│
-├── src/db/               Data layer
-│   ├── mod.rs            Module declarations
-│   ├── inspector.rs      SQLite schema/row reading
-│   ├── differ.rs         Diff orchestration with progress
-│   ├── snapshot.rs       Snapshot persistence
-│   └── types.rs          Core data types
-│
-├── src/diff/             Comparison engine
-│   ├── mod.rs            Module declarations
-│   ├── schema.rs         Schema diffing
-│   ├── data.rs           Streaming row-level diffing
-│   └── export.rs         SQL migration generation
-│
-├── src/state/            UI state
-│   ├── mod.rs            Module declarations
-│   └── workspace.rs      Workspace, pane, and diff state
-│
-└── src/ui/               Rendering layer
-    ├── mod.rs            Module declarations
-    ├── workspace.rs      View switcher
-    ├── file_panel.rs     File open dialogs
-    ├── table_view.rs     Table browsing
-    ├── diff_view.rs      Row diff display
-    ├── schema_diff.rs    Schema diff display
-    ├── sql_export.rs     SQL preview/copy/save
-    ├── snapshot_panel.rs Snapshot management
-    ├── progress.rs       Progress indicators
-    └── dialogs.rs        Common dialogs
+
+When the Go acceleration layer exists, it lives under `go/` with its own `go.mod` and standard Go layout (`cmd/`, `internal/`). Python calls Go components via subprocess, ctypes, or local HTTP - the integration approach will be decided based on the specific hot path being optimized.
+
+## Key abstractions
+
+### Data types (`db/types.py`)
+
+Core types that flow through the entire pipeline:
+
+- `DatabaseSummary` - complete schema metadata for one database (tables, views, indexes, triggers)
+- `TableInfo`, `ColumnInfo`, `IndexInfo`, `TriggerInfo`, `ViewInfo` - individual schema objects
+- `SchemaDiff` - result of comparing two `DatabaseSummary` objects
+- `TableDataDiff`, `RowDiff`, `CellChange` - row-level diff results
+- `DatabaseDiff` - complete diff result combining schema and row diffs
+
+### Inspector (`db/inspector.py`)
+
+Reads SQLite databases in read-only mode (`file:...?mode=ro` URI). Extracts schema metadata from `sqlite_master`. Provides paginated row access with deterministic primary-key or `rowid` tie-breakers. Exposes a streaming `for_each_row()` iterator for bounded-memory access to large tables.
+
+### Differ (`db/differ.py`)
+
+Orchestrates the full diff pipeline: runs schema comparison, then streams row-level diffs for each shared table. Delegates to `diff/schema.py` for schema-level work and `diff/data.py` for row-level work.
+
+### Schema diff (`diff/schema.py`)
+
+Compares two `DatabaseSummary` objects. Detects added, removed, and modified tables, indexes, and triggers.
+
+### Data diff (`diff/data.py`)
+
+Streaming row-level comparison using primary key matching. Falls back to `rowid` when primary keys diverge (with warnings). Tracks per-cell changes within modified rows. Does not materialize full tables in memory.
+
+### SQL export (`diff/export.py`)
+
+Generates SQL that transforms one database into another. Uses temporary-table rebuild for schema-changed tables. Guards `PRAGMA foreign_keys`. Drops and recreates triggers around migration DML to prevent left-side triggers from firing during migration. Streaming `write_export()` writes one statement at a time to any file-like object for bounded-memory operation.
+
+### Snapshot store (`db/snapshot.py`)
+
+Local snapshot management under `~/.patchworks/`:
+
+```text
+~/.patchworks/
+  patchworks.db              Metadata database (SQLite)
+  snapshots/
+    <uuid>.sqlite            Full database copies
 ```
+
+Snapshots are full file copies with metadata (source path, timestamp, label) tracked in the metadata database.
+
+### Semantic diff (`diff/semantic.py`)
+
+Heuristic detection of table renames (via column similarity scoring), column renames (via property matching), and compatible type shifts (using SQLite type affinity rules). All heuristic detections carry confidence scores.
+
+### Three-way merge (`diff/merge.py`)
+
+Diffs two derived databases against a common ancestor. Merges non-conflicting row and schema changes. Surfaces conflicts with enough context for manual resolution.
+
+### Migration management (`db/migration.py`, `diff/migration.py`)
+
+Ordered migration sequences with generation, validation, rollback, and squashing. Persisted under `~/.patchworks/patchworks.db`.
 
 ## Data flow
 
-### Startup
+### Inspect
 
 ```
-main.rs
-  ├─ --snapshot <db>  → snapshot::save_snapshot() → exit
-  ├─ no args          → PatchworksApp::new(empty) → eframe::run_native()
-  ├─ one arg          → PatchworksApp::new(left=db) → eframe::run_native()
-  └─ two args         → PatchworksApp::new(left=db, right=db) → eframe::run_native()
+CLI: patchworks inspect <db>
+  -> cli.py dispatches to db/inspector.py
+  -> inspector opens database read-only
+  -> reads sqlite_master for schema metadata
+  -> returns DatabaseSummary
+  -> cli.py formats as human-readable or JSON
 ```
 
-### Database loading (background)
+### Diff
 
 ```
-User opens file → app.rs::load_left/right()
-  → spawns thread: inspector::inspect_database()
-  → thread sends DatabaseSummary through mpsc channel
-  → app.rs::poll_background_work() picks it up on next UI tick
-  → updates WorkspaceState.left/right
-  → triggers initial table page load (also backgrounded)
+CLI: patchworks diff <left> <right>
+  -> cli.py dispatches to db/differ.py
+  -> differ calls inspector on both databases
+  -> differ calls diff/schema.py to compare schemas
+  -> differ calls diff/data.py to stream row-level diffs per shared table
+  -> returns DatabaseDiff (schema diff + all table data diffs)
+  -> cli.py formats output
+  -> exit code: 0 = no differences, 2 = differences found
 ```
 
-### Table browsing (background)
+### Export
 
 ```
-User selects table or changes page/sort
-  → app.rs::request_table_refresh()
-  → spawns thread: inspector::read_table_page()
-  → thread sends TablePage through mpsc channel
-  → app.rs::poll_background_work() applies it
-  → UI re-renders with new data
+CLI: patchworks export <left> <right>
+  -> runs the diff pipeline (same as above)
+  -> passes diff results to diff/export.py
+  -> export generates SQL:
+      PRAGMA foreign_keys=OFF
+      For each removed table: DROP TABLE
+      For each added table: CREATE TABLE + INSERT rows
+      For each modified table:
+        DROP affected triggers
+        If schema changed: temp-table rebuild
+          CREATE TABLE _patchworks_new_<name> (right schema)
+          INSERT INTO _patchworks_new_<name> SELECT ... FROM <name>
+          DROP TABLE <name>
+          ALTER TABLE _patchworks_new_<name> RENAME TO <name>
+        INSERT/DELETE/UPDATE rows
+        Recreate indexes from right schema
+        Recreate triggers from right schema
+      PRAGMA foreign_keys=ON
+  -> writes to stdout or file via -o flag
 ```
 
-### Diff computation (background)
+### Snapshot
 
 ```
-User clicks Diff
-  → app.rs::request_diff()
-  → spawns thread: differ::diff_databases_with_progress()
-    → schema::diff_schema()
-    → data::diff_all_tables() (streaming merge per shared table)
-    → export::export_diff_as_sql()
-  → progress callbacks update DiffState.progress through channel
-  → completed DatabaseDiff sent through channel
-  → app.rs::poll_background_work() applies result
+CLI: patchworks snapshot save <db>
+  -> copies database file to ~/.patchworks/snapshots/<uuid>.sqlite
+  -> records metadata in ~/.patchworks/patchworks.db
 ```
 
-### SQL export pipeline
+## CLI layer
 
-```
-export::export_diff_as_sql(schema_diff, data_diffs, left_summary, right_summary)
-  → PRAGMA foreign_keys=OFF
-  → For each removed table: DROP TABLE
-  → For each added table: CREATE TABLE + INSERT all rows
-  → For each modified table:
-    → DROP affected triggers
-    → If schema changed: temp-table rebuild
-      → CREATE TABLE _patchworks_new_<name> (right schema)
-      → INSERT INTO _patchworks_new_<name> SELECT ... FROM <name>
-      → DROP TABLE <name>
-      → ALTER TABLE _patchworks_new_<name> RENAME TO <name>
-    → INSERT/DELETE/UPDATE rows
-    → Recreate indexes from right schema
-    → Recreate triggers from right schema
-  → PRAGMA foreign_keys=ON
-```
+The CLI uses `argparse` from the standard library. Subcommand dispatch happens in `cli.py`. The CLI is a thin dispatch layer - it calls the same backend functions that any future web UI will use.
 
-## Core types
+Subcommands: `inspect`, `diff`, `export`, `snapshot` (save/list/delete), `merge`, `migrate` (generate/validate/list/show/apply/delete/squash/conflicts).
 
-### `DatabaseSummary`
-Represents the complete schema metadata for one database: tables, views, indexes, triggers, and their properties.
+All read-oriented commands support `--format human|json`. Export supports `-o/--output <file>`. Exit codes: 0 = success/no differences, 1 = error, 2 = differences found.
 
-### `TableInfo` / `ViewInfo` / `SchemaObjectInfo`
-Individual schema objects with their names, DDL, and (for tables) column details and row counts.
+## Web UI (later phase)
 
-### `SqlValue`
-Enum representing SQLite values: Null, Integer, Real, Text, Blob. Used throughout the diff pipeline for row comparison.
-
-### `SchemaDiff`
-The result of comparing two `DatabaseSummary` objects: lists of added, removed, and modified tables plus schema objects.
-
-### `TableDataDiff`
-Row-level diff for a single table: added rows, removed rows, modified rows (with before/after), statistics, and warnings.
-
-### `DatabaseDiff`
-The complete diff result: left summary, right summary, schema diff, all table data diffs, and the generated SQL export.
-
-## Background task model
-
-Patchworks uses a simple fire-and-forget threading model:
-
-- `std::thread::spawn` for all background work (no async runtime).
-- `std::sync::mpsc` channels for result delivery.
-- Each task type has a dedicated channel and receiver stored in `PatchworksApp`.
-- `poll_background_work()` runs on every `egui` update tick, checking all receivers.
-- Stale tasks are superseded by replacing the receiver — the old thread runs to completion but its result is dropped.
-
-### Why not async?
-
-The workload is CPU-bound (SQLite reads, diff computation) rather than I/O-bound. An async runtime would add complexity without improving throughput. The current model is simple, correct, and sufficient for the foreseeable future.
-
-### Cancellation strategy
-
-There is no cooperative cancellation today. Background threads run to completion even if their results are no longer needed. This is acceptable because:
-
-1. Database reads are fast for normal-sized databases.
-2. Diff computation is the only potentially long operation, and progress is reported.
-3. The cost of a wasted computation is small compared to the complexity of safe cancellation.
-
-If cancellation becomes necessary (Phase 3 hardening for very large databases), it should be implemented as cooperative checkpoints in the diff engine, not as thread interruption.
+FastAPI serves Jinja2 templates with htmx for dynamic interaction. The web UI calls the same `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` functions as the CLI. No forked logic between surfaces. Launched via `patchworks serve`.
 
 ## SQLite interaction model
 
-- All database access uses `rusqlite` with the `bundled` feature (no system SQLite dependency).
-- Databases are opened in **read-only mode** (`SQLITE_OPEN_READ_ONLY`).
-- Schema metadata is read from `sqlite_master`.
+- All access is read-only (`file:...?mode=ro` URI).
+- Schema metadata comes from `sqlite_master`.
 - Row reads use parameterized queries with pagination.
-- Sorted pagination includes a deterministic tie-breaker (primary key or `rowid`) to ensure stable page boundaries.
-
-### WAL and live database handling
-
-- Patchworks does not acquire exclusive locks.
-- WAL-backed and actively changing databases may produce inconsistent snapshots if rows are modified between reads.
-- The tool documents this as "best-effort" behavior.
-- Snapshot-based workflows (snapshot → compare later) provide stronger guarantees because the snapshot is a static copy.
-
-## Snapshot store
-
-```
-~/.patchworks/
-├── patchworks.db              Metadata database (SQLite)
-└── snapshots/
-    └── <uuid>.sqlite          Full database copies
-```
-
-- Each snapshot is a full copy of the source database (via SQLite backup API).
-- Metadata (source path, timestamp, label) is tracked in `patchworks.db`.
-- Snapshots are identified by UUID v4.
-- The store uses one SQLite connection per operation (intentionally simple; persistent connection is a future consideration).
-
-## Testing strategy
-
-### Integration tests (`tests/`)
-
-- `diff_tests.rs`: Core diff and export behavior including edge cases (WITHOUT ROWID, FK enforcement, rowid fallback).
-- `proptest_invariants.rs`: Property-based tests for schema classification invariants, row-diff accounting, and SQL export round-trips.
-- `snapshot_tests.rs`: Snapshot persistence and retrieval.
-
-### Fixture system
-
-- `tests/fixtures/create_fixtures.sql` contains named SQL blocks.
-- `tests/support/mod.rs` provides `create_db()` and `create_db_with_sql()` helpers that load fixtures into temporary SQLite databases.
-
-### Benchmarks (`benches/`)
-
-- `diff_hot_paths.rs`: Row diff streaming performance (20,000 rows) and end-to-end diff.
-- `query_hot_paths.rs`: Paged table read and sorted pagination performance.
-- Sample size is intentionally low (10) because bundled SQLite compilation is slow in release mode.
+- Sorted pagination includes a deterministic tie-breaker (primary key or `rowid`).
+- WAL-mode databases are readable but concurrent writes during inspection can produce inconsistent results. Snapshot-based workflows provide stronger guarantees.
+- Encrypted databases are not supported.
 
 ## Key invariants
 
-These must hold across all changes:
-
-1. **Diff + export + apply = identity.** Applying the generated SQL export to the left database must produce the right database's state. Property tests verify this.
+1. **Diff + export + apply = identity.** Applying the generated SQL to the left database must produce the right database's state.
 2. **Schema objects survive migration.** Indexes and triggers from the right database must be present after export application.
 3. **Foreign key safety.** Generated SQL must not violate FK constraints when applied to a database with `PRAGMA foreign_keys=ON`.
-4. **Triggers don't fire during migration.** Left-side triggers are dropped before DML and right-side triggers are created after.
-5. **Deterministic pagination.** The same query with the same sort must return the same page regardless of insertion order.
-6. **UI thread never blocks on I/O.** All database operations happen on background threads.
+4. **Triggers do not fire during migration.** Left-side triggers are dropped before DML; right-side triggers are created after.
+5. **Deterministic pagination.** The same query with the same sort returns the same page regardless of insertion order.
+6. **Streaming, bounded memory.** Diff and export operations do not materialize full tables.
+
+## Toolchain
+
+| Tool | Purpose |
+|------|---------|
+| `uv` | Package and environment management |
+| `ruff` | Linting and formatting |
+| `pyright` | Type checking |
+| `pytest` | Testing (with `pytest-cov` for coverage) |
+| `pre-commit` | Local quality gates |
+| `go test` | Go tests (when Go components exist) |
+| `golangci-lint` | Go linting (when Go components exist) |

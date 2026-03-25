@@ -18,9 +18,9 @@ This is a working plan for a product being rebuilt from the ground up in Python 
 
 ## Mission
 
-Build the definitive SQLite comparison and migration tool — the `git diff` of the database world.
+Build the definitive SQLite comparison and migration tool - the `git diff` of the database world.
 
-Patchworks exists because there is no trustworthy, purpose-built tool for understanding what changed between two SQLite databases. Not a hex editor. Not a shell script. A real tool — correct, fast, and well-built — that a developer or operator can point at two database files and immediately understand the delta.
+Patchworks exists because there is no trustworthy, purpose-built tool for understanding what changed between two SQLite databases. Not a hex editor. Not a shell script. A real tool - correct, fast, and well-built - that a developer or operator can point at two database files and immediately understand the delta.
 
 ### Long-term vision
 
@@ -39,7 +39,7 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current execution posture
 
-The project is at Phase 0 — scaffold and bootstrap.
+The project is at Phase 0 - scaffold and bootstrap.
 
 - **Stack decision:** Python is the primary language. Go is reserved for hot paths if Python's performance becomes a bottleneck on large databases.
 - **Target parity:** The rewrite aims for full feature parity with the Rust v0.3.0 release before expanding scope.
@@ -98,7 +98,7 @@ If a future pass changes the real priorities, update this section first rather t
 | `src/patchworks/diff/migration.py` | Migration generation, validation, rollback, squashing |
 | `tests/` | All test modules |
 
-**Invariant:** If docs, code, and CLI output ever disagree, the next change must reconcile all three. When docs and code disagree, code and tests win — update docs immediately.
+**Invariant:** If docs, code, and CLI output ever disagree, the next change must reconcile all three. When docs and code disagree, code and tests win - update docs immediately.
 
 ---
 
@@ -133,11 +133,11 @@ If a future pass changes the real priorities, update this section first rather t
 
 ### Progress log format
 
-`YYYY-MM-DD: scope — outcome. Verified with: <commands>. Next: <follow-up>.`
+`YYYY-MM-DD: scope - outcome. Verified with: <commands>. Next: <follow-up>.`
 
 ### Decision log format
 
-`YYYY-MM-DD: decision — rationale — consequence.`
+`YYYY-MM-DD: decision - rationale - consequence.`
 
 ---
 
@@ -188,7 +188,7 @@ Do not record these as passed unless they were actually run. If a gate is tempor
 Principles:
 
 - Every dependency must justify itself against implementing the functionality directly
-- The standard library covers more than most people think — prefer it
+- The standard library covers more than most people think - prefer it
 - `sqlite3` is stdlib; no external SQLite driver
 - Separate runtime and dev dependencies
 - Lock dependencies with `uv lock`; commit the lockfile
@@ -206,15 +206,15 @@ Principles:
 
 ## Current priority stack
 
-### Priority 1 — Scaffold and core engine
+### Priority 1 - Scaffold and core engine
 
 Get the Python project bootstrapped and build the core inspection and diff engine.
 
-### Priority 2 — CLI surface
+### Priority 2 - CLI surface
 
 Expose all core capabilities through a CLI with subcommands, JSON output, and CI-friendly exit codes.
 
-### Priority 3 — Feature parity
+### Priority 3 - Feature parity
 
 Reach parity with the Rust v0.3.0 feature set: snapshots, export, merge, migrations.
 
@@ -241,7 +241,7 @@ Reach parity with the Rust v0.3.0 feature set: snapshots, export, merge, migrati
 
 ---
 
-### Phase 0 — Scaffold and bootstrap
+### Phase 0 - Scaffold and bootstrap
 **Status: queued**
 
 Bootstrap the Python project structure, tooling, and CI pipeline.
@@ -270,7 +270,7 @@ Exit criteria:
 
 ---
 
-### Phase 1 — Core SQLite inspection engine
+### Phase 1 - Core SQLite inspection engine
 **Status: queued**
 
 Build the SQLite reading layer that all other features depend on.
@@ -293,7 +293,7 @@ Exit criteria:
 
 ---
 
-### Phase 2 — Schema and row diffing
+### Phase 2 - Schema and row diffing
 **Status: planned**
 
 Build the comparison engine.
@@ -314,7 +314,7 @@ Exit criteria:
 
 ---
 
-### Phase 3 — Snapshot management
+### Phase 3 - Snapshot management
 **Status: planned**
 
 Local snapshot store for capturing database state.
@@ -334,7 +334,7 @@ Exit criteria:
 
 ---
 
-### Phase 4 — SQL export and migration generation
+### Phase 4 - SQL export and migration generation
 **Status: planned**
 
 Generate SQL that transforms one database into another.
@@ -356,15 +356,15 @@ Exit criteria:
 
 ---
 
-### Phase 5 — CLI surface
+### Phase 5 - CLI surface
 **Status: planned**
 
 Expose all capabilities through subcommands.
 
 - [ ] Implement `cli.py` with argparse subcommand dispatch
-- [ ] `patchworks inspect <db>` — schema, tables, columns, views, indexes, triggers
-- [ ] `patchworks diff <left> <right>` — schema and row diffs
-- [ ] `patchworks export <left> <right>` — SQL migration output
+- [ ] `patchworks inspect <db>` - schema, tables, columns, views, indexes, triggers
+- [ ] `patchworks diff <left> <right>` - schema and row diffs
+- [ ] `patchworks export <left> <right>` - SQL migration output
 - [ ] `patchworks snapshot save <db>` with `--name`
 - [ ] `patchworks snapshot list` with optional `--source` filter
 - [ ] `patchworks snapshot delete <uuid>`
@@ -380,11 +380,11 @@ Exit criteria:
 - [ ] All core capabilities are accessible via CLI subcommands
 - [ ] JSON output is machine-readable and stable
 - [ ] Exit codes are consistent and documented
-- [ ] CLI calls the same backend functions as any future UI surface — no forked logic
+- [ ] CLI calls the same backend functions as any future UI surface - no forked logic
 
 ---
 
-### Phase 6 — Advanced diff intelligence
+### Phase 6 - Advanced diff intelligence
 **Status: planned**
 
 Richer diff analysis beyond raw deltas.
@@ -409,7 +409,7 @@ Exit criteria:
 
 ---
 
-### Phase 7 — Three-way merge
+### Phase 7 - Three-way merge
 **Status: planned**
 
 Merge changes from two databases against a common ancestor.
@@ -429,7 +429,7 @@ Exit criteria:
 
 ---
 
-### Phase 8 — Migration workflow management
+### Phase 8 - Migration workflow management
 **Status: planned**
 
 Ordered migration sequences with validation and safety.
@@ -454,7 +454,7 @@ Exit criteria:
 
 ---
 
-### Phase 9 — Local web UI
+### Phase 9 - Local web UI
 **Status: planned**
 
 Interactive browser-based interface served locally via FastAPI + htmx.
@@ -475,11 +475,11 @@ Exit criteria:
 
 - [ ] The web UI provides interactive browsing and diff review equivalent to the former desktop app
 - [ ] `patchworks serve` launches a local server that works without external dependencies
-- [ ] The web UI calls the same backend functions as the CLI — no forked logic
+- [ ] The web UI calls the same backend functions as the CLI - no forked logic
 
 ---
 
-### Phase 10 — Go acceleration layer
+### Phase 10 - Go acceleration layer
 **Status: exploratory**
 
 Optional Go components for performance-critical paths.
@@ -500,7 +500,7 @@ Exit criteria:
 
 ---
 
-### Phase 11 — CI/CD integration and automation
+### Phase 11 - CI/CD integration and automation
 **Status: planned**
 
 - [ ] Add `patchworks check` command for CI gates
@@ -517,7 +517,7 @@ Exit criteria:
 
 ---
 
-### Phase 12 — Plugin and extension architecture
+### Phase 12 - Plugin and extension architecture
 **Status: exploratory**
 
 - [ ] Design plugin surface for alternate diff formatters (HTML, Markdown)
@@ -533,7 +533,7 @@ Exit criteria:
 
 ---
 
-### Phase 13 — Team features and shared snapshot registries
+### Phase 13 - Team features and shared snapshot registries
 **Status: exploratory**
 
 - [ ] Design a snapshot registry protocol for optional push/pull workflows
@@ -606,7 +606,7 @@ Carried forward from the Rust version's CLI/GUI parity principle. The CLI and an
 
 ### Strategic risks
 
-- Rebuilding a shipped product in a different language carries opportunity cost — the time could go toward new features instead
+- Rebuilding a shipped product in a different language carries opportunity cost - the time could go toward new features instead
 - Go acceleration layer may never be needed, but planning for it adds architectural complexity to the Python code
 - Plugin system introduces API stability obligations that constrain future refactoring
 - Multi-engine support could dilute SQLite-specific correctness if abstraction boundaries are drawn wrong
@@ -640,9 +640,9 @@ If picking this repo up for the next pass:
 
 ## Immediate next moves
 
-1. **Complete Phase 0 — scaffold and bootstrap.** `uv init`, project structure, tooling, CI.
-2. **Build Phase 1 — core SQLite inspection engine.** Schema reading, row pagination, data types.
-3. **Build Phase 2 — schema and row diffing.** The core comparison engine.
+1. **Complete Phase 0 - scaffold and bootstrap.** `uv init`, project structure, tooling, CI.
+2. **Build Phase 1 - core SQLite inspection engine.** Schema reading, row pagination, data types.
+3. **Build Phase 2 - schema and row diffing.** The core comparison engine.
 
 If priorities change, replace this list rather than letting stale direction linger.
 
@@ -654,14 +654,14 @@ If priorities change, replace this list rather than letting stale direction ling
 
 ### 2026-03-25
 
-- Rewrote BUILD.md and README.md to plan patchworks as a Python + Go project instead of Rust. Product vision and feature set are unchanged. All phases are fresh with unchecked boxes. No code changes — planning only. Next: Phase 0 scaffold and bootstrap.
+- Rewrote BUILD.md and README.md to plan patchworks as a Python + Go project instead of Rust. Product vision and feature set are unchanged. All phases are fresh with unchecked boxes. No code changes - planning only. Next: Phase 0 scaffold and bootstrap.
 
 ---
 
 ## Decision log
 
-- 2026-03-25: Python-first architecture — Python owns CLI, orchestration, diff logic, export generation, and user-facing tooling; Go deferred until profiling justifies it — keeps the codebase in one language as long as possible.
-- 2026-03-25: stdlib sqlite3 over external drivers — Python's bundled sqlite3 is sufficient for read-only inspection — no external dependency needed.
-- 2026-03-25: argparse over click/typer — stdlib handles the subcommand structure without adding a dependency — revisit if CLI ergonomics become friction.
-- 2026-03-25: No desktop GUI — egui desktop app is not being ported; CLI is primary, FastAPI + htmx web UI replaces desktop GUI as a later phase.
+- 2026-03-25: Python-first architecture - Python owns CLI, orchestration, diff logic, export generation, and user-facing tooling; Go deferred until profiling justifies it - keeps the codebase in one language as long as possible.
+- 2026-03-25: stdlib sqlite3 over external drivers - Python's bundled sqlite3 is sufficient for read-only inspection - no external dependency needed.
+- 2026-03-25: argparse over click/typer - stdlib handles the subcommand structure without adding a dependency - revisit if CLI ergonomics become friction.
+- 2026-03-25: No desktop GUI - egui desktop app is not being ported; CLI is primary, FastAPI + htmx web UI replaces desktop GUI as a later phase.
 - 2026-03-25: Snapshot location, export correctness, views inspect-only, and backend sharing carried forward from the Rust version with unchanged rationale.

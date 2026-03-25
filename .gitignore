@@ -1,8 +1,25 @@
-# Build artifacts
-/target
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+*.whl
 
-# Test artifacts
-/.patchworks-test
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+uv.lock
+
+# Go
+go/bin/
+go/pkg/
 
 # SQLite databases (test artifacts, not source)
 *.db
@@ -14,6 +31,15 @@
 *.db-wal
 *.sqlite-shm
 *.sqlite-wal
+
+# Test artifacts
+/.patchworks-test
+.pytest_cache/
+.coverage
+htmlcov/
+*.profraw
+*.profdata
+lcov.info
 
 # OS artifacts
 .DS_Store
@@ -27,8 +53,5 @@ Thumbs.db
 .vscode/
 *.iml
 
-# Profiling and coverage
-*.profraw
-*.profdata
-lcov.info
-tarpaulin-report.html
+# Type checking
+.pyright/

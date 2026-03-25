@@ -6,68 +6,77 @@ Patchworks is an open-source project and contributions are welcome. This documen
 
 ### Prerequisites
 
-- Rust stable toolchain (edition 2021)
-- `cargo-nextest` (recommended for faster test execution)
-- `cargo-deny` (for dependency policy checks)
-
-No system SQLite is needed — `rusqlite` builds with the `bundled` feature.
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) for package and environment management
+- Go (latest stable) - only needed if working on Go acceleration components
 
 ### Clone and build
 
 ```bash
 git clone git@github.com:dunamismax/patchworks.git
 cd patchworks
-cargo build
+uv sync
 ```
 
 ### Run the full verification suite
 
 ```bash
-cargo build
-cargo test
-cargo nextest run
-cargo fmt --all --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo bench --no-run
-cargo deny check
-cargo run -- --help
+uv sync
+ruff check .
+ruff format --check .
+pyright
+pytest
 ```
 
-Every PR should pass all of these. If `cargo bench --no-run` is slow on first run, that's expected — it compiles bundled SQLite in release mode.
+Every PR should pass all of these.
+
+### Go verification (when Go components exist)
+
+```bash
+cd go/
+go build ./...
+go test ./...
+go vet ./...
+golangci-lint run
+govulncheck ./...
+```
 
 ## Project structure
 
 ```
-src/main.rs       → CLI entrypoint (keep thin)
-src/app.rs        → Application coordinator
-src/db/           → SQLite inspection, snapshots, diff orchestration
-src/diff/         → Schema diffing, row diffing, SQL export
-src/state/        → UI-facing workspace state
-src/ui/           → egui rendering (presentation only)
-tests/            → Integration tests, property tests, fixtures
-benches/          → Criterion benchmarks
+src/patchworks/
+  __init__.py       Package root
+  __main__.py       CLI entrypoint
+  cli.py            Subcommand dispatch (keep thin)
+  db/               SQLite inspection, snapshots, diff orchestration
+  diff/             Schema diffing, row diffing, SQL export, merge, semantic analysis
+tests/              All test modules
+go/                 (future) Go acceleration components
 ```
 
-Read [`ARCHITECTURE.md`](ARCHITECTURE.md) for detailed module-level documentation.
+Read [`ARCHITECTURE.md`](ARCHITECTURE.md) for detailed technical documentation.
 
 ## Code conventions
 
-### Rust style
+### Python style
 
-- **Edition 2021.** No nightly features.
-- **`thiserror`** for library error types, **`anyhow`** only in `main.rs`.
-- **No `unwrap()`** outside tests. Use `?` propagation or explicit error handling.
-- **Doc comments** on all public types and functions.
-- **`cargo fmt`** is the formatting authority. No manual style exceptions.
-- **`cargo clippy`** with `-D warnings` is the lint authority. Fix warnings, don't suppress them without justification.
+- **Python 3.12+.** Use modern syntax and type hints.
+- **Type hints on all public functions.** Pyright must pass clean.
+- **`ruff check`** is the lint authority. Fix warnings, do not suppress them without justification.
+- **`ruff format`** is the formatting authority. Run `ruff check --fix` first for import sorting.
+- **No `assert` outside tests** for control flow. Use explicit error handling.
+
+### Go style (when applicable)
+
+- **`gofmt`** for formatting.
+- **`golangci-lint`** for linting.
+- **`modernc.org/sqlite`** for SQLite access. No CGO.
 
 ### Architecture rules
 
-- `ui/` renders and handles interaction. It does not own persistence or business logic.
-- `state/` stores UI-facing state. It does not perform I/O.
+- `cli.py` dispatches. It does not own persistence or business logic.
 - `db/` and `diff/` own data inspection, comparison, snapshots, and export logic.
-- `main.rs` stays thin — argument parsing and dispatch only.
-- `app.rs` coordinates between modules. It is the only place that spawns background threads.
+- The CLI and any future web UI call the same backend functions. No forked logic between surfaces.
 
 ### Diff and export correctness
 
@@ -81,30 +90,27 @@ Read [`ARCHITECTURE.md`](ARCHITECTURE.md) for detailed module-level documentatio
 
 ```bash
 # Full suite
-cargo test
+pytest
 
-# Faster parallel execution
-cargo nextest run
+# With coverage
+pytest --cov=patchworks --cov-report=term-missing
 
 # Specific test file
-cargo test --test diff_tests
+pytest tests/test_inspector.py
 
-# Library unit tests only
-cargo test --lib
+# Specific test
+pytest tests/test_inspector.py::test_schema_reading
 ```
 
 ### Writing tests
 
-- Integration tests go in `tests/`.
-- Use the fixture system in `tests/fixtures/create_fixtures.sql` for deterministic test data.
-- Use `tests/support/mod.rs` helpers (`create_db`, `create_db_with_sql`) for test database setup.
-- Property tests use `proptest` and go in `tests/proptest_invariants.rs`.
-- Benchmarks use `criterion` and go in `benches/`.
+- Tests go in `tests/`.
+- Use `pytest` fixtures for test database setup and teardown.
+- Use temporary directories for test databases.
 
 ### What to test
 
-- Every new diff or export behavior needs at least one integration test demonstrating correct output.
-- Property tests should cover invariants (e.g., "diff + export + apply = identity").
+- Every new diff or export behavior needs at least one test demonstrating correct output.
 - If you fix a bug, add a regression test that would have caught it.
 
 ## Submitting changes
@@ -126,7 +132,7 @@ cargo test --lib
 - Describe what changed and why in the PR description.
 - If the change is large, explain the approach and any alternatives considered.
 - Include test coverage for new behavior.
-- Don't mix refactoring with feature work in the same PR.
+- Do not mix refactoring with feature work in the same PR.
 
 ### Commit messages
 

@@ -4,35 +4,19 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 
 ## [Unreleased]
 
-### Added
-- **Schema browser panel** — dedicated view to browse all tables, views, indexes, and triggers with full DDL preview (⌘2)
-- **Table search/filter** — type-ahead filter in file panels to quickly find tables by name
-- **Keyboard shortcuts** — ⌘1-6 to switch views, ⌘D to trigger diff
-- **Theme support** — dark, light, or system-following theme selector in the toolbar
-- **Recent files** — recently opened databases are remembered across sessions with quick L/R reopen from a toolbar menu
-- **Collapsible diff sections** — removed, added, and modified rows are now grouped under collapsible headers with row counts
-- **Diff summary bar** — aggregate change statistics across all tables shown at the top of the diff view
-- **Per-table change indicators** — table selector in diff view now shows +/-/~ counts per table
-- **Schema diff summary bar** — index and trigger changes are now surfaced in the schema diff view with a summary header
-- **Improved file panel** — shows filename (with full-path tooltip), index and trigger counts alongside table/view counts
-- **SQL export polish** — read-only preview, line/statement counts, icon-labeled buttons
-- `src/ui/schema_browser.rs` — new schema browser UI module
-- `src/state/recent.rs` — recent-files persistence module
-
 ### Changed
-- View switcher reordered: Table → Schema → Diff → Schema Diff → Snapshots → SQL Export
-- Schema diff unchanged tables now collapsed by default
-- Status bar shows keyboard shortcut hints
-- SQL export preview is now non-interactive (read-only)
+- **Rewrite from Rust to Python + Go.** The project is being rebuilt in Python (with Go reserved for performance-critical paths). All Rust source code, Cargo manifests, and Rust-specific tooling have been removed. See [BUILD.md](BUILD.md) for the full roadmap.
 
-### Decisions
-- Views remain inspect-only; diff/export support deferred (decision-0004 reaffirmed)
-- Indexes and triggers are browsable in the schema browser; dedicated diff UI panels deferred in favor of the existing schema diff view
+---
+
+*The following entries document the previous Rust implementation (v0.1.0 through v0.3.0). They are preserved for historical reference. These versions are no longer the active codebase.*
+
+---
 
 ## [0.3.0] - 2026-03-24
 
 ### Added
-- **macOS CI** — CI now runs the full quality gate on both Linux and macOS via a build matrix
+- **macOS CI** - CI now runs the full quality gate on both Linux and macOS via a build matrix
 - Dedicated "Operational guidance" section in README covering live/WAL-mode databases and large database handling
 - Verified install paths: both `cargo install --path .` and `cargo install patchworks` recorded passing on macOS arm64
 
@@ -50,13 +34,13 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 ## [0.2.0] - 2026-03-24
 
 ### Added
-- **Headless CLI subcommands** — Patchworks is no longer GUI-only:
-  - `patchworks inspect <db>` — print schema summary (tables, columns, views, indexes, triggers)
-  - `patchworks diff <left> <right>` — show schema and data changes between two databases
-  - `patchworks export <left> <right>` — generate SQL migration to transform left into right
-  - `patchworks snapshot save <db>` — save a snapshot of a database
-  - `patchworks snapshot list` — list saved snapshots (optionally filtered by source)
-  - `patchworks snapshot delete <id>` — delete a saved snapshot
+- **Headless CLI subcommands** - Patchworks is no longer GUI-only:
+  - `patchworks inspect <db>` - print schema summary (tables, columns, views, indexes, triggers)
+  - `patchworks diff <left> <right>` - show schema and data changes between two databases
+  - `patchworks export <left> <right>` - generate SQL migration to transform left into right
+  - `patchworks snapshot save <db>` - save a snapshot of a database
+  - `patchworks snapshot list` - list saved snapshots (optionally filtered by source)
+  - `patchworks snapshot delete <id>` - delete a saved snapshot
 - `--format human|json` flag on `inspect`, `diff`, and `snapshot list` for machine-readable output
 - `-o/--output <file>` flag on `export` to write SQL migration directly to a file
 - Exit code conventions: 0 = success/no differences, 1 = error, 2 = differences found (enables CI gating)
@@ -67,7 +51,7 @@ All notable changes to Patchworks are documented here. This project uses [Keep a
 - 7 unit tests in `src/cli.rs` for command output behavior
 - Backward compatibility: `--snapshot <db>` legacy flag still works, bare arguments still launch the GUI
 - Streaming SQL export API (`write_export`) that writes one statement at a time to any `Write` sink for bounded-memory large migrations
-- Row-at-a-time table seeding via `for_each_row` — export no longer materializes entire tables in memory
+- Row-at-a-time table seeding via `for_each_row` - export no longer materializes entire tables in memory
 - WAL-mode database regression test covering inspection, diffing, and export application
 - Streaming export tests: parity with in-memory export, file-based round-trip, and large-table (5000+ rows) verification
 - Edge-case regression tests for empty databases and table-added-from-empty diffs
