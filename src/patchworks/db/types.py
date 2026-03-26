@@ -6,7 +6,7 @@ All types are plain dataclasses — no external dependencies.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -238,3 +238,101 @@ class DatabaseDiff:
             d.rows_added or d.rows_removed or d.rows_modified
             for d in self.table_data_diffs
         )
+
+
+# ---------------------------------------------------------------------------
+# Semantic diff types (Phase 6)
+# ---------------------------------------------------------------------------
+
+AnnotationStatus = Literal[
+    "pending", "approved", "rejected", "needs-discussion", "deferred"
+]
+
+
+@dataclass(frozen=True)
+class TableRenameCandidate:
+    """Heuristic detection of a table rename.
+
+    A removed table may have been renamed to an added table when their
+    column sets are sufficiently similar.
+    """
+
+    old_name: str
+    new_name: str
+    confidence: float
+    """0.0-1.0 similarity score based on column overlap."""
+    matched_columns: tuple[str, ...]
+    """Columns shared between the two tables."""
+
+
+@dataclass(frozen=True)
+class ColumnRenameCandidate:
+    """Heuristic detection of a column rename within a single table."""
+
+    table_name: str
+    old_name: str
+    new_name: str
+    confidence: float
+    """0.0-1.0 score based on property matching."""
+
+
+@dataclass(frozen=True)
+class TypeShift:
+    """Detection of a compatible (or incompatible) type change.
+
+    Uses SQLite type-affinity rules to classify the shift.
+    """
+
+    table_name: str
+    column_name: str
+    old_type: str
+    new_type: str
+    old_affinity: str
+    new_affinity: str
+    compatible: bool
+    """``True`` if the shift preserves data under SQLite affinity rules."""
+    confidence: float
+    """1.0 for deterministic classification; lower for heuristic edge cases."""
+
+
+@dataclass(frozen=True)
+class DiffAnnotation:
+    """An annotation attached to a diff element for triage workflows."""
+
+    target: str
+    """Dotted path identifying the element, e.g. ``"table.users"``."""
+    status: AnnotationStatus
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class DiffSummary:
+    """Aggregate statistics for a complete diff."""
+
+    tables_added: int = 0
+    tables_removed: int = 0
+    tables_modified: int = 0
+    indexes_added: int = 0
+    indexes_removed: int = 0
+    indexes_modified: int = 0
+    triggers_added: int = 0
+    triggers_removed: int = 0
+    triggers_modified: int = 0
+    views_added: int = 0
+    views_removed: int = 0
+    views_modified: int = 0
+    total_rows_added: int = 0
+    total_rows_removed: int = 0
+    total_rows_modified: int = 0
+    total_cell_changes: int = 0
+
+
+@dataclass(frozen=True)
+class SemanticAnalysis:
+    """Results of semantic diff analysis layered on top of a raw diff."""
+
+    table_renames: tuple[TableRenameCandidate, ...] = field(default_factory=tuple)
+    column_renames: tuple[ColumnRenameCandidate, ...] = field(default_factory=tuple)
+    type_shifts: tuple[TypeShift, ...] = field(default_factory=tuple)
+    annotations: tuple[DiffAnnotation, ...] = field(default_factory=tuple)
+    summary: DiffSummary = field(default_factory=DiffSummary)

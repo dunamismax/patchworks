@@ -12,7 +12,13 @@ import sys
 from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
-    from patchworks.db.types import DatabaseDiff, DatabaseSummary, TableDataDiff
+    from patchworks.db.types import (
+        DatabaseDiff,
+        DatabaseSummary,
+        DiffSummary,
+        SemanticAnalysis,
+        TableDataDiff,
+    )
 
 # ---------------------------------------------------------------------------
 # Exit codes
@@ -56,6 +62,7 @@ def _cmd_diff(args: argparse.Namespace) -> int:
     from pathlib import Path
 
     from patchworks.db.differ import diff_databases
+    from patchworks.diff.semantic import analyze, filter_diff, summarize_diff
 
     left = Path(args.left)
     right = Path(args.right)
@@ -71,12 +78,35 @@ def _cmd_diff(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
+    # Apply filters if specified.
+    change_types: set[str] | None = None
+    filter_tables: set[str] | None = None
+    if hasattr(args, "change_type") and args.change_type:
+        change_types = set(args.change_type)
+    if hasattr(args, "table") and args.table:
+        filter_tables = set(args.table)
+    if change_types is not None or filter_tables is not None:
+        result = filter_diff(result, change_types=change_types, tables=filter_tables)
+
+    has_changes = result.has_changes
+    show_summary = getattr(args, "summary", False)
+    show_semantic = getattr(args, "semantic", False)
+
     if args.format == "json":
-        print(json.dumps(_diff_to_dict(result), indent=2))
+        d = _diff_to_dict(result)
+        if show_summary:
+            d["summary"] = _summary_to_stats_dict(summarize_diff(result))
+        if show_semantic:
+            d["semantic"] = _semantic_to_dict(analyze(result))
+        print(json.dumps(d, indent=2))
     else:
         _print_diff_human(result)
+        if show_summary:
+            _print_summary_stats(summarize_diff(result))
+        if show_semantic:
+            _print_semantic(analyze(result))
 
-    return EXIT_DIFFERENCES if result.has_changes else EXIT_OK
+    return EXIT_DIFFERENCES if has_changes else EXIT_OK
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
@@ -277,6 +307,27 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["human", "json"],
         default="human",
         help="Output format (default: human)",
+    )
+    p_diff.add_argument(
+        "--change-type",
+        action="append",
+        choices=["added", "removed", "modified"],
+        help="Filter by change type (can be repeated)",
+    )
+    p_diff.add_argument(
+        "--table",
+        action="append",
+        help="Filter to specific table(s) (can be repeated)",
+    )
+    p_diff.add_argument(
+        "--summary",
+        action="store_true",
+        help="Show aggregate diff summary statistics",
+    )
+    p_diff.add_argument(
+        "--semantic",
+        action="store_true",
+        help="Show semantic analysis (renames, type shifts)",
     )
     p_diff.set_defaults(func=_cmd_diff)
 
@@ -638,6 +689,131 @@ def _print_diff_human(diff: DatabaseDiff) -> None:
         print()
         for w in diff.warnings:
             print(f"warning: {w}")
+
+
+def _summary_to_stats_dict(summary: DiffSummary) -> dict[str, int]:
+    """Convert a :class:`DiffSummary` to a JSON-friendly dict."""
+    return {
+        "tables_added": summary.tables_added,
+        "tables_removed": summary.tables_removed,
+        "tables_modified": summary.tables_modified,
+        "indexes_added": summary.indexes_added,
+        "indexes_removed": summary.indexes_removed,
+        "indexes_modified": summary.indexes_modified,
+        "triggers_added": summary.triggers_added,
+        "triggers_removed": summary.triggers_removed,
+        "triggers_modified": summary.triggers_modified,
+        "views_added": summary.views_added,
+        "views_removed": summary.views_removed,
+        "views_modified": summary.views_modified,
+        "total_rows_added": summary.total_rows_added,
+        "total_rows_removed": summary.total_rows_removed,
+        "total_rows_modified": summary.total_rows_modified,
+        "total_cell_changes": summary.total_cell_changes,
+    }
+
+
+def _semantic_to_dict(analysis: SemanticAnalysis) -> dict[str, Any]:
+    """Convert a :class:`SemanticAnalysis` to a JSON-friendly dict."""
+    return {
+        "table_renames": [
+            {
+                "old_name": r.old_name,
+                "new_name": r.new_name,
+                "confidence": r.confidence,
+                "matched_columns": list(r.matched_columns),
+            }
+            for r in analysis.table_renames
+        ],
+        "column_renames": [
+            {
+                "table_name": r.table_name,
+                "old_name": r.old_name,
+                "new_name": r.new_name,
+                "confidence": r.confidence,
+            }
+            for r in analysis.column_renames
+        ],
+        "type_shifts": [
+            {
+                "table_name": ts.table_name,
+                "column_name": ts.column_name,
+                "old_type": ts.old_type,
+                "new_type": ts.new_type,
+                "old_affinity": ts.old_affinity,
+                "new_affinity": ts.new_affinity,
+                "compatible": ts.compatible,
+                "confidence": ts.confidence,
+            }
+            for ts in analysis.type_shifts
+        ],
+        "annotations": [
+            {
+                "target": a.target,
+                "status": a.status,
+                "note": a.note,
+            }
+            for a in analysis.annotations
+        ],
+    }
+
+
+def _print_summary_stats(summary: DiffSummary) -> None:
+    """Print aggregate diff summary statistics."""
+    ta = summary.tables_added
+    tr = summary.tables_removed
+    tm = summary.tables_modified
+    ia = summary.indexes_added
+    ir = summary.indexes_removed
+    im = summary.indexes_modified
+    ga = summary.triggers_added
+    gr = summary.triggers_removed
+    gm = summary.triggers_modified
+    va = summary.views_added
+    vr = summary.views_removed
+    vm = summary.views_modified
+    ra = summary.total_rows_added
+    rr = summary.total_rows_removed
+    rm = summary.total_rows_modified
+    cc = summary.total_cell_changes
+
+    print("\nSummary:")
+    print(f"  Schema: +{ta} -{tr} ~{tm} tables")
+    print(f"          +{ia} -{ir} ~{im} indexes")
+    print(f"          +{ga} -{gr} ~{gm} triggers")
+    print(f"          +{va} -{vr} ~{vm} views")
+    print(f"  Data:   +{ra} -{rr} ~{rm} rows")
+    print(f"          {cc} cell changes")
+
+
+def _print_semantic(analysis: SemanticAnalysis) -> None:
+    """Print semantic analysis results."""
+    if analysis.table_renames:
+        print("\nProbable table renames:")
+        for r in analysis.table_renames:
+            print(
+                f"  {r.old_name} -> {r.new_name} "
+                f"(confidence: {r.confidence:.0%}, "
+                f"matched: {', '.join(r.matched_columns)})"
+            )
+
+    if analysis.column_renames:
+        print("\nProbable column renames:")
+        for r in analysis.column_renames:
+            print(
+                f"  {r.table_name}.{r.old_name} -> {r.new_name} "
+                f"(confidence: {r.confidence:.0%})"
+            )
+
+    if analysis.type_shifts:
+        print("\nType shifts:")
+        for ts in analysis.type_shifts:
+            compat = "compatible" if ts.compatible else "INCOMPATIBLE"
+            print(
+                f"  {ts.table_name}.{ts.column_name}: "
+                f"{ts.old_type} -> {ts.new_type} "
+                f"({ts.old_affinity} -> {ts.new_affinity}, {compat})"
+            )
 
 
 def _get_version() -> str:
