@@ -1,0 +1,152 @@
+{% if not diff.has_changes %}
+<div class="card">
+    <p>No differences found between the two databases.</p>
+</div>
+{% else %}
+<div class="stats-grid mb-2">
+    <div class="stat-item">
+        <div class="stat-value diff-added">+{{ summary.tables_added }}</div>
+        <div class="stat-label">Tables Added</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-value diff-removed">−{{ summary.tables_removed }}</div>
+        <div class="stat-label">Tables Removed</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-value diff-modified">~{{ summary.tables_modified }}</div>
+        <div class="stat-label">Tables Modified</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-value diff-added">+{{ summary.total_rows_added }}</div>
+        <div class="stat-label">Rows Added</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-value diff-removed">−{{ summary.total_rows_removed }}</div>
+        <div class="stat-label">Rows Removed</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-value diff-modified">~{{ summary.total_rows_modified }}</div>
+        <div class="stat-label">Rows Modified</div>
+    </div>
+</div>
+
+{% set sd = diff.schema_diff %}
+
+{% if sd.has_changes %}
+<div class="card">
+    <h3>Schema Changes</h3>
+    {% for t in sd.tables_added %}
+    <details>
+        <summary class="diff-added">+ Table: {{ t.name }}</summary>
+        <pre><code>{{ t.sql }}</code></pre>
+    </details>
+    {% endfor %}
+    {% for t in sd.tables_removed %}
+    <details>
+        <summary class="diff-removed">− Table: {{ t.name }}</summary>
+        <pre><code>{{ t.sql }}</code></pre>
+    </details>
+    {% endfor %}
+    {% for tm in sd.tables_modified %}
+    <details>
+        <summary class="diff-modified">~ Table: {{ tm.table_name }}</summary>
+        <div class="mt-1">
+            {% for c in tm.columns_added %}
+            <p class="diff-added">+ Column: {{ c.name }} {{ c.type }}</p>
+            {% endfor %}
+            {% for c in tm.columns_removed %}
+            <p class="diff-removed">− Column: {{ c.name }} {{ c.type }}</p>
+            {% endfor %}
+            {% for old, new in tm.columns_modified %}
+            <p class="diff-modified">~ Column: {{ old.name }} ({{ old.type }} → {{ new.type }})</p>
+            {% endfor %}
+        </div>
+    </details>
+    {% endfor %}
+    {% for i in sd.indexes_added %}
+    <p class="diff-added">+ Index: {{ i.name }}</p>
+    {% endfor %}
+    {% for i in sd.indexes_removed %}
+    <p class="diff-removed">− Index: {{ i.name }}</p>
+    {% endfor %}
+    {% for im in sd.indexes_modified %}
+    <p class="diff-modified">~ Index: {{ im.name }}</p>
+    {% endfor %}
+    {% for t in sd.triggers_added %}
+    <p class="diff-added">+ Trigger: {{ t.name }}</p>
+    {% endfor %}
+    {% for t in sd.triggers_removed %}
+    <p class="diff-removed">− Trigger: {{ t.name }}</p>
+    {% endfor %}
+    {% for tm in sd.triggers_modified %}
+    <p class="diff-modified">~ Trigger: {{ tm.name }}</p>
+    {% endfor %}
+    {% for v in sd.views_added %}
+    <p class="diff-added">+ View: {{ v.name }}</p>
+    {% endfor %}
+    {% for v in sd.views_removed %}
+    <p class="diff-removed">− View: {{ v.name }}</p>
+    {% endfor %}
+    {% for vm in sd.views_modified %}
+    <p class="diff-modified">~ View: {{ vm.name }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% for td in diff.table_data_diffs %}
+{% if td.rows_added or td.rows_removed or td.rows_modified %}
+<div class="card">
+    <details>
+        <summary>
+            <strong>{{ td.table_name }}</strong>
+            <span class="badge badge-green">+{{ td.rows_added }}</span>
+            <span class="badge badge-red">−{{ td.rows_removed }}</span>
+            <span class="badge badge-yellow">~{{ td.rows_modified }}</span>
+        </summary>
+        <table class="mt-1">
+            <thead>
+                <tr>
+                    <th>Change</th>
+                    <th>Key</th>
+                    <th>Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rd in td.row_diffs %}
+                <tr class="{% if rd.kind == 'added' %}diff-row-added{% elif rd.kind == 'removed' %}diff-row-removed{% else %}diff-row-modified{% endif %}">
+                    <td>
+                        {% if rd.kind == "added" %}<span class="badge badge-green">ADD</span>
+                        {% elif rd.kind == "removed" %}<span class="badge badge-red">DEL</span>
+                        {% else %}<span class="badge badge-yellow">MOD</span>{% endif %}
+                    </td>
+                    <td><code>{{ rd.key|join(", ") }}</code></td>
+                    <td>
+                        {% if rd.kind == "modified" %}
+                            {% for cc in rd.cell_changes %}
+                            <span class="text-sm">{{ cc.column }}: <code>{{ cc.old_value }}</code> → <code>{{ cc.new_value }}</code></span>{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        {% elif rd.kind == "added" and rd.new_values %}
+                            <span class="text-sm text-muted">{{ rd.new_values }}</span>
+                        {% elif rd.kind == "removed" and rd.old_values %}
+                            <span class="text-sm text-muted">{{ rd.old_values }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </details>
+</div>
+{% endif %}
+{% endfor %}
+
+{% if diff.warnings %}
+<div class="card">
+    <h3>Warnings</h3>
+    {% for w in diff.warnings %}
+    <p class="text-muted text-sm">⚠ {{ w }}</p>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% endif %}

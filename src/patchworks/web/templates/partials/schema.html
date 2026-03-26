@@ -1,0 +1,143 @@
+<div class="card">
+    <h3>{{ summary.path }}</h3>
+    <div class="stats-grid">
+        <div class="stat-item">
+            <div class="stat-value">{{ summary.tables|length }}</div>
+            <div class="stat-label">Tables</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ summary.views|length }}</div>
+            <div class="stat-label">Views</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ summary.indexes|length }}</div>
+            <div class="stat-label">Indexes</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ summary.triggers|length }}</div>
+            <div class="stat-label">Triggers</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ summary.page_size }}</div>
+            <div class="stat-label">Page Size</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ summary.journal_mode }}</div>
+            <div class="stat-label">Journal</div>
+        </div>
+    </div>
+</div>
+
+{% if summary.tables %}
+<div class="card">
+    <h3>Tables</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Columns</th>
+                <th>Rows</th>
+                <th>PK</th>
+                <th>DDL</th>
+                <th>Browse</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for t in summary.tables %}
+            <tr>
+                <td><strong>{{ t.name }}</strong>{% if t.without_rowid %} <span class="badge badge-muted">WITHOUT ROWID</span>{% endif %}</td>
+                <td>{{ t.columns|length }}</td>
+                <td>{{ t.row_count }}</td>
+                <td>{{ t.primary_key_columns|join(", ") or "—" }}</td>
+                <td>
+                    <button class="btn btn-sm"
+                            hx-get="/browse/ddl?db={{ db }}&name={{ t.name }}&kind=table"
+                            hx-target="#ddl-preview"
+                            hx-swap="innerHTML">DDL</button>
+                </td>
+                <td><a href="/browse/rows?db={{ db }}&table={{ t.name }}" class="btn btn-sm">Rows</a></td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if summary.views %}
+<div class="card">
+    <h3>Views</h3>
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Columns</th><th>DDL</th></tr>
+        </thead>
+        <tbody>
+        {% for v in summary.views %}
+            <tr>
+                <td><strong>{{ v.name }}</strong></td>
+                <td>{{ v.columns|length }}</td>
+                <td>
+                    <button class="btn btn-sm"
+                            hx-get="/browse/ddl?db={{ db }}&name={{ v.name }}&kind=view"
+                            hx-target="#ddl-preview"
+                            hx-swap="innerHTML">DDL</button>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if summary.indexes %}
+<div class="card">
+    <h3>Indexes</h3>
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Table</th><th>Columns</th><th>Unique</th><th>DDL</th></tr>
+        </thead>
+        <tbody>
+        {% for i in summary.indexes %}
+            <tr>
+                <td>{{ i.name }}</td>
+                <td>{{ i.table_name }}</td>
+                <td>{{ i.columns|join(", ") }}</td>
+                <td>{% if i.unique %}<span class="badge badge-blue">UNIQUE</span>{% else %}—{% endif %}</td>
+                <td>
+                    <button class="btn btn-sm"
+                            hx-get="/browse/ddl?db={{ db }}&name={{ i.name }}&kind=index"
+                            hx-target="#ddl-preview"
+                            hx-swap="innerHTML">DDL</button>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% if summary.triggers %}
+<div class="card">
+    <h3>Triggers</h3>
+    <table>
+        <thead>
+            <tr><th>Name</th><th>Table</th><th>DDL</th></tr>
+        </thead>
+        <tbody>
+        {% for tr in summary.triggers %}
+            <tr>
+                <td>{{ tr.name }}</td>
+                <td>{{ tr.table_name }}</td>
+                <td>
+                    <button class="btn btn-sm"
+                            hx-get="/browse/ddl?db={{ db }}&name={{ tr.name }}&kind=trigger"
+                            hx-target="#ddl-preview"
+                            hx-swap="innerHTML">DDL</button>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div id="ddl-preview" class="mt-1"></div>

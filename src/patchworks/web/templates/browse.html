@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Schema Browser — patchworks{% endblock %}
+{% block content %}
+<h2>Schema Browser</h2>
+<div class="card">
+    <form class="form-row"
+          hx-get="/browse/schema"
+          hx-target="#schema-result"
+          hx-indicator="#schema-loading">
+        <div>
+            <label for="db">Database path</label>
+            <input type="text" id="db" name="db" placeholder="/path/to/database.sqlite"
+                   value="{{ db|default('') }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Inspect</button>
+        <span id="schema-loading" class="htmx-indicator">Loading…</span>
+    </form>
+</div>
+<div id="schema-result">
+    {% if summary is defined and summary %}
+        {% include "partials/schema.html" %}
+    {% endif %}
+</div>
+{% endblock %}

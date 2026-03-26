@@ -670,8 +670,15 @@ def _migration_to_dict(m: MigrationInfo) -> dict[str, Any]:
 
 def _cmd_serve(args: argparse.Namespace) -> int:
     """Launch the local web UI."""
-    _ = args
-    print("serve: not yet implemented")
+    import uvicorn
+
+    from patchworks.web.app import create_app
+
+    app = create_app()
+    host = getattr(args, "host", "127.0.0.1")
+    port = getattr(args, "port", 8000)
+    print(f"Starting patchworks web UI at http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="info")
     return EXIT_OK
 
 
@@ -848,6 +855,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # serve -----------------------------------------------------------------
     p_serve = sub.add_parser("serve", help="Launch local web UI")
+    p_serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host to bind (default: 127.0.0.1)",
+    )
     p_serve.add_argument(
         "--port",
         type=int,

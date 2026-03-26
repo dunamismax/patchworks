@@ -35,10 +35,10 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current execution posture
 
-The project is at Phase 8 - migration workflow management.
+The project is at Phase 9 - local web UI.
 
 - **Stack decision:** Python is the primary language. Go is reserved for hot paths if Python's performance becomes a bottleneck on large databases.
-- **Phases 0–8 are complete and verified.** Core inspection, diffing, snapshots, SQL export, CLI surface, advanced diff intelligence, three-way merge, and migration workflow management are all shipped and tested (290 tests passing).
+- **Phases 0–9 are complete and verified.** Core inspection, diffing, snapshots, SQL export, CLI surface, advanced diff intelligence, three-way merge, migration workflow management, and local web UI are all shipped and tested (317 tests passing).
 - **Discipline:** Roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -92,6 +92,11 @@ If a future pass changes the real priorities, update this section first rather t
 | `src/patchworks/diff/semantic.py` | Semantic diff awareness (renames, type shifts) |
 | `src/patchworks/diff/merge.py` | Three-way merge and conflict detection |
 | `src/patchworks/diff/migration.py` | Migration generation, validation, rollback, squashing |
+| `src/patchworks/web/__init__.py` | Web UI package root |
+| `src/patchworks/web/app.py` | FastAPI application factory |
+| `src/patchworks/web/routes.py` | Web UI routes (schema browser, diff viewer, export, snapshots) |
+| `src/patchworks/web/templates/` | Jinja2 templates (base, pages, partials) |
+| `src/patchworks/web/static/style.css` | Hand-written CSS with light/dark theme support |
 | `tests/` | All test modules |
 
 **Invariant:** If docs, code, and CLI output ever disagree, the next change must reconcile all three. When docs and code disagree, code and tests win - update docs immediately.
@@ -229,7 +234,7 @@ Snapshots, export, merge, and migration workflows.
 | 6 | Advanced diff intelligence | **Done** |
 | 7 | Three-way merge | **Done** |
 | 8 | Migration workflow management | **Done** |
-| 9 | Local web UI | **Planned** |
+| 9 | Local web UI | **Done** |
 | 10 | Go acceleration layer | **Exploratory** |
 | 11 | CI/CD integration and automation | **Planned** |
 | 12 | Plugin and extension architecture | **Exploratory** |
@@ -451,27 +456,27 @@ Exit criteria:
 ---
 
 ### Phase 9 - Local web UI
-**Status: planned**
+**Status: done**
 
 Interactive browser-based interface served locally via FastAPI + htmx.
 
-- [ ] Add FastAPI to dependencies
-- [ ] Implement `web/` package with routes, templates, and static assets
-- [ ] Schema browser with table/view/index/trigger listing and DDL preview
-- [ ] Table row browser with pagination
-- [ ] Diff viewer with collapsible sections and summary statistics
-- [ ] SQL export preview
-- [ ] Snapshot management panel
-- [ ] Add `patchworks serve` CLI subcommand to launch local web server
-- [ ] Keep the web UI on the same backend truth layer as the CLI
-- [ ] Add Jinja2 templates with htmx for dynamic interaction
-- [ ] Add light/dark theme support
+- [x] Add FastAPI to dependencies
+- [x] Implement `web/` package with routes, templates, and static assets
+- [x] Schema browser with table/view/index/trigger listing and DDL preview
+- [x] Table row browser with pagination
+- [x] Diff viewer with collapsible sections and summary statistics
+- [x] SQL export preview
+- [x] Snapshot management panel
+- [x] Add `patchworks serve` CLI subcommand to launch local web server
+- [x] Keep the web UI on the same backend truth layer as the CLI
+- [x] Add Jinja2 templates with htmx for dynamic interaction
+- [x] Add light/dark theme support
 
 Exit criteria:
 
-- [ ] The web UI provides interactive browsing and diff review equivalent to the former desktop app
-- [ ] `patchworks serve` launches a local server that works without external dependencies
-- [ ] The web UI calls the same backend functions as the CLI - no forked logic
+- [x] The web UI provides interactive browsing and diff review equivalent to the former desktop app
+- [x] `patchworks serve` launches a local server that works without external dependencies
+- [x] The web UI calls the same backend functions as the CLI - no forked logic
 
 ---
 
@@ -634,9 +639,9 @@ If picking this repo up for the next pass:
 
 ## Immediate next moves
 
-1. **Build Phase 9 - local web UI.** FastAPI + htmx for interactive browsing and diff review.
-2. **Build Phase 11 - CI/CD integration and automation.** `patchworks check` command, GitHub Actions integration, pre-commit hooks.
-3. **Explore Phase 10 - Go acceleration layer.** Profile Python hot paths, identify bottlenecks.
+1. **Build Phase 11 - CI/CD integration and automation.** `patchworks check` command, GitHub Actions integration, pre-commit hooks.
+2. **Explore Phase 10 - Go acceleration layer.** Profile Python hot paths, identify bottlenecks.
+3. **Explore Phase 12 - Plugin and extension architecture.** Design plugin surface for diff formatters and export targets.
 
 If priorities change, replace this list rather than letting stale direction linger.
 
@@ -648,6 +653,7 @@ If priorities change, replace this list rather than letting stale direction ling
 
 ### 2026-03-26
 
+- Completed Phase 9: local web UI. FastAPI + Jinja2 + htmx. `web/` package with `app.py` (application factory), `routes.py` (schema browser, row browser, diff viewer, SQL export preview, snapshot management), Jinja2 templates with htmx partials, hand-written CSS with light/dark theme support via `prefers-color-scheme` and manual toggle. `patchworks serve` CLI subcommand launches uvicorn. All routes call the same backend functions as the CLI (inspect_database, diff_databases, export_as_sql, SnapshotStore). Dependencies: fastapi, jinja2, uvicorn, python-multipart. 27 new tests (317 total). Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 11 CI/CD integration.
 - Completed Phase 8: migration workflow management. `db/migration.py` (MigrationStore with save/list/get/delete/mark_applied/mark_unapplied/squash), `diff/migration.py` (generate_migration, validate_migration, apply_migration with rollback, squash_migrations, detect_conflicts). Full CLI `migrate` subcommand family: generate, validate, list, show, apply, delete, squash, conflicts. --dry-run on generate/apply/squash. --format human|json on all subcommands. --rollback on apply. 52 new tests (290 total). Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 9 local web UI.
 - Completed Phase 7: three-way merge engine (`diff/merge.py`), CLI `merge` subcommand with `--format human|json`, comprehensive tests for non-conflicting merges, row conflicts, schema conflicts, delete-modify conflicts, table-delete conflicts, and edge cases. Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 8 migration workflow management.
 - Updated BUILD.md: checked off all Phase 0–6 boxes against actual codebase. All 202+ tests passing. All quality gates green.

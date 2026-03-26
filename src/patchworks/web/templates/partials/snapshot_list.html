@@ -1,0 +1,38 @@
+{% if snapshots %}
+<div class="card">
+    <h3>Saved Snapshots</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Source</th>
+                <th>Size</th>
+                <th>Created</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for s in snapshots %}
+            <tr>
+                <td><code class="text-sm">{{ s.id[:8] }}…</code></td>
+                <td>{{ s.name or "—" }}</td>
+                <td class="text-sm">{{ s.source }}</td>
+                <td>{{ s.size_bytes }} B</td>
+                <td class="text-sm">{{ s.created_at }}</td>
+                <td>
+                    <button class="btn btn-sm btn-danger"
+                            hx-delete="/snapshots/{{ s.id }}"
+                            hx-target="#snapshot-list"
+                            hx-confirm="Delete snapshot {{ s.id[:8] }}…?">Delete</button>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <p class="text-muted">No snapshots saved yet.</p>
+</div>
+{% endif %}

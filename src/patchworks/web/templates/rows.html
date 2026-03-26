@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ table }} — patchworks{% endblock %}
+{% block content %}
+<h2>Table: {{ table }}</h2>
+<p class="text-muted text-sm">
+    <a href="/browse/schema?db={{ db }}">← Back to schema</a> ·
+    {{ row_count }} rows total
+</p>
+<div id="rows-result">
+    {% include "partials/rows.html" %}
+</div>
+{% endblock %}

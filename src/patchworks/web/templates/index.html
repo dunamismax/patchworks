@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}patchworks{% endblock %}
+{% block content %}
+<div class="hero">
+    <h2>Git-style diffs for SQLite databases</h2>
+    <p>Inspect schemas, compare databases, generate migrations, and manage snapshots — all from your browser.</p>
+    <div class="feature-grid">
+        <a href="/browse" class="card">
+            <h3>📋 Schema Browser</h3>
+            <p>Tables, views, indexes, triggers — with DDL preview.</p>
+        </a>
+        <a href="/diff" class="card">
+            <h3>🔍 Diff Viewer</h3>
+            <p>Schema and row-level diffs with summary statistics.</p>
+        </a>
+        <a href="/export" class="card">
+            <h3>📄 SQL Export</h3>
+            <p>Generate and preview migration SQL between databases.</p>
+        </a>
+        <a href="/snapshots" class="card">
+            <h3>📸 Snapshots</h3>
+            <p>Save, list, and manage database snapshots.</p>
+        </a>
+    </div>
+</div>
+{% endblock %}

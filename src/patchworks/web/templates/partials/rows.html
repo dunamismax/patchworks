@@ -1,0 +1,39 @@
+{% if rows %}
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                {% for col in columns %}
+                <th>{{ col }}</th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr>
+                {% for col in columns %}
+                <td>{{ row[col] if row[col] is not none else "<em>NULL</em>"|safe }}</td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div class="pagination">
+    {% if page > 1 %}
+    <button class="btn btn-sm"
+            hx-get="/browse/rows?db={{ db }}&table={{ table }}&page={{ page - 1 }}"
+            hx-target="#rows-result"
+            hx-swap="innerHTML">← Prev</button>
+    {% endif %}
+    <span class="page-info">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+    <button class="btn btn-sm"
+            hx-get="/browse/rows?db={{ db }}&table={{ table }}&page={{ page + 1 }}"
+            hx-target="#rows-result"
+            hx-swap="innerHTML">Next →</button>
+    {% endif %}
+</div>
+{% else %}
+<p class="text-muted">No rows.</p>
+{% endif %}

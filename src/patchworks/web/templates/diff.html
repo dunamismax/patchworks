@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Diff Viewer — patchworks{% endblock %}
+{% block content %}
+<h2>Diff Viewer</h2>
+<div class="card">
+    <form class="form-row"
+          hx-get="/diff/result"
+          hx-target="#diff-result"
+          hx-indicator="#diff-loading">
+        <div>
+            <label for="left">Left (base) database</label>
+            <input type="text" id="left" name="left" placeholder="/path/to/left.sqlite"
+                   value="{{ left|default('') }}">
+        </div>
+        <div>
+            <label for="right">Right (target) database</label>
+            <input type="text" id="right" name="right" placeholder="/path/to/right.sqlite"
+                   value="{{ right|default('') }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Compare</button>
+        <span id="diff-loading" class="htmx-indicator">Loading…</span>
+    </form>
+</div>
+<div id="diff-result">
+    {% if diff is defined and diff %}
+        {% include "partials/diff.html" %}
+    {% endif %}
+</div>
+{% endblock %}

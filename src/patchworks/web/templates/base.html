@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}patchworks{% endblock %}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4" integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+" crossorigin="anonymous"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1><a href="/">⚙ patchworks</a></h1>
+            <nav>
+                <a href="/browse">Schema</a>
+                <a href="/diff">Diff</a>
+                <a href="/export">Export</a>
+                <a href="/snapshots">Snapshots</a>
+                <button class="theme-toggle" onclick="toggleTheme()">◑ Theme</button>
+            </nav>
+        </div>
+    </header>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <script>
+        function toggleTheme() {
+            const html = document.documentElement;
+            const current = html.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : (current === 'light' ? '' : 'dark');
+            if (next) {
+                html.setAttribute('data-theme', next);
+                localStorage.setItem('pw-theme', next);
+            } else {
+                html.removeAttribute('data-theme');
+                localStorage.removeItem('pw-theme');
+            }
+        }
+        (function() {
+            const saved = localStorage.getItem('pw-theme');
+            if (saved) document.documentElement.setAttribute('data-theme', saved);
+        })();
+    </script>
+</body>
+</html>

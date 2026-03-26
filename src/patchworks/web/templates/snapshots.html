@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Snapshots — patchworks{% endblock %}
+{% block content %}
+<h2>Snapshot Management</h2>
+<div class="card">
+    <h3>Save Snapshot</h3>
+    <form class="form-row"
+          hx-post="/snapshots/save"
+          hx-target="#snapshot-list"
+          hx-indicator="#snap-loading">
+        <div>
+            <label for="database">Database path</label>
+            <input type="text" id="database" name="database" placeholder="/path/to/database.sqlite">
+        </div>
+        <div>
+            <label for="snap-name">Name (optional)</label>
+            <input type="text" id="snap-name" name="name" placeholder="my-snapshot">
+        </div>
+        <button type="submit" class="btn btn-primary">Save</button>
+        <span id="snap-loading" class="htmx-indicator">Saving…</span>
+    </form>
+</div>
+<div id="snapshot-list">
+    {% include "partials/snapshot_list.html" %}
+</div>
+{% endblock %}

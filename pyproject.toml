@@ -6,7 +6,12 @@ readme = "README.md"
 authors = [{ name = "dunamismax", email = "dunamismax@tutamail.com" }]
 requires-python = ">=3.12"
 license = "MIT"
-dependencies = []
+dependencies = [
+    "fastapi>=0.135.2",
+    "jinja2>=3.1.6",
+    "python-multipart>=0.0.22",
+    "uvicorn>=0.42.0",
+]
 
 [project.scripts]
 patchworks = "patchworks:cli_main"
@@ -16,7 +21,14 @@ requires = ["uv_build>=0.10.7,<0.11.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["ruff>=0.11.0", "pyright>=1.1.0", "pytest>=8.0", "pytest-cov>=6.0", "pre-commit>=4.0"]
+dev = [
+    "ruff>=0.11.0",
+    "pyright>=1.1.0",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "pre-commit>=4.0",
+    "httpx>=0.28.1",
+]
 
 # -- ruff ------------------------------------------------------------------
 
