@@ -12,6 +12,7 @@ import sys
 from typing import TYPE_CHECKING, Any, NoReturn
 
 if TYPE_CHECKING:
+    from patchworks.db.migration import MigrationInfo
     from patchworks.db.types import (
         DatabaseDiff,
         DatabaseSummary,
@@ -280,9 +281,391 @@ def _cmd_merge(args: argparse.Namespace) -> int:
 
 def _cmd_migrate(args: argparse.Namespace) -> int:
     """Migration workflow management."""
-    _ = args
-    print("migrate: not yet implemented")
+    sub = getattr(args, "migrate_command", None)
+    if not sub:
+        print(
+            "error: specify a migrate subcommand: "
+            "generate, validate, list, show, apply, delete, squash, conflicts",
+            file=sys.stderr,
+        )
+        return EXIT_ERROR
+
+    if sub == "generate":
+        return _cmd_migrate_generate(args)
+    elif sub == "validate":
+        return _cmd_migrate_validate(args)
+    elif sub == "list":
+        return _cmd_migrate_list(args)
+    elif sub == "show":
+        return _cmd_migrate_show(args)
+    elif sub == "apply":
+        return _cmd_migrate_apply(args)
+    elif sub == "delete":
+        return _cmd_migrate_delete(args)
+    elif sub == "squash":
+        return _cmd_migrate_squash(args)
+    elif sub == "conflicts":
+        return _cmd_migrate_conflicts(args)
+    else:
+        print(f"error: unknown migrate command: {sub}", file=sys.stderr)
+        return EXIT_ERROR
+
+
+def _cmd_migrate_generate(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from patchworks.db.migration import MigrationStore
+    from patchworks.diff.migration import generate_migration
+
+    left = Path(args.left)
+    right = Path(args.right)
+
+    for p, label in ((left, "left"), (right, "right")):
+        if not p.exists():
+            print(f"error: {label} database not found: {p}", file=sys.stderr)
+            return EXIT_ERROR
+
+    try:
+        store = MigrationStore(
+            base_dir=getattr(args, "store_dir", None),
+        )
+        result = generate_migration(
+            left,
+            right,
+            store,
+            name=getattr(args, "name", None),
+            dry_run=getattr(args, "dry_run", False),
+        )
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+    if fmt == "json":
+        d: dict[str, Any] = {
+            "dry_run": result.dry_run,
+            "forward_sql": result.forward_sql,
+            "reverse_sql": result.reverse_sql,
+            "objects_touched": result.objects_touched,
+        }
+        if result.migration:
+            d["migration"] = _migration_to_dict(result.migration)
+        print(json.dumps(d, indent=2))
+    else:
+        if result.dry_run:
+            print("Dry run — migration not saved.")
+        else:
+            assert result.migration is not None
+            print(f"Migration generated: {result.migration.id}")
+            if result.migration.name:
+                print(f"  Name: {result.migration.name}")
+            print(f"  Sequence: {result.migration.sequence}")
+        print(f"  Objects touched: {', '.join(result.objects_touched) or '(none)'}")
+        print(f"  Forward SQL: {len(result.forward_sql)} chars")
+        print(f"  Reverse SQL: {len(result.reverse_sql)} chars")
+
     return EXIT_OK
+
+
+def _cmd_migrate_validate(args: argparse.Namespace) -> int:
+    from patchworks.db.migration import MigrationStore
+    from patchworks.diff.migration import validate_migration
+
+    try:
+        store = MigrationStore(
+            base_dir=getattr(args, "store_dir", None),
+        )
+        mig = store.get(args.id)
+        if mig is None:
+            print(f"error: migration not found: {args.id}", file=sys.stderr)
+            return EXIT_ERROR
+
+        result = validate_migration(mig)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+    if fmt == "json":
+        print(
+            json.dumps(
+                {
+                    "migration_id": result.migration_id,
+                    "valid": result.valid,
+                    "message": result.message,
+                    "remaining_differences": result.remaining_differences,
+                },
+                indent=2,
+            )
+        )
+    else:
+        status = "VALID" if result.valid else "INVALID"
+        print(f"Migration {args.id}: {status}")
+        print(f"  {result.message}")
+
+    return EXIT_OK if result.valid else EXIT_DIFFERENCES
+
+
+def _cmd_migrate_list(args: argparse.Namespace) -> int:
+    from patchworks.db.migration import MigrationStore
+
+    try:
+        store = MigrationStore(
+            base_dir=getattr(args, "store_dir", None),
+        )
+        migrations = store.list()
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+    if fmt == "json":
+        print(json.dumps([_migration_to_dict(m) for m in migrations], indent=2))
+    else:
+        if not migrations:
+            print("No migrations found.")
+        else:
+            for m in migrations:
+                label = f" ({m.name})" if m.name else ""
+                status = "applied" if m.applied else "pending"
+                print(f"[{m.sequence}] {m.id}{label} [{status}]")
+
+    return EXIT_OK
+
+
+def _cmd_migrate_show(args: argparse.Namespace) -> int:
+    from patchworks.db.migration import MigrationStore
+
+    try:
+        store = MigrationStore(
+            base_dir=getattr(args, "store_dir", None),
+        )
+        mig = store.get(args.id)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if mig is None:
+        print(f"error: migration not found: {args.id}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+    if fmt == "json":
+        print(json.dumps(_migration_to_dict(mig), indent=2))
+    else:
+        print(f"Migration: {mig.id}")
+        if mig.name:
+            print(f"  Name: {mig.name}")
+        print(f"  Sequence: {mig.sequence}")
+        print(f"  Source: {mig.source_path}")
+        print(f"  Target: {mig.target_path}")
+        print(f"  Applied: {mig.applied}")
+        if mig.applied_at:
+            print(f"  Applied at: {mig.applied_at}")
+        print(f"  Created: {mig.created_at}")
+        print(f"  Objects: {mig.objects_touched or '(none)'}")
+        print(f"\n--- Forward SQL ---\n{mig.forward_sql}")
+        print(f"\n--- Reverse SQL ---\n{mig.reverse_sql}")
+
+    return EXIT_OK
+
+
+def _cmd_migrate_apply(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from patchworks.db.migration import MigrationStore
+    from patchworks.diff.migration import apply_migration
+
+    target = Path(args.target)
+    dry_run = getattr(args, "dry_run", False)
+
+    if not dry_run and not target.exists():
+        print(f"error: target database not found: {target}", file=sys.stderr)
+        return EXIT_ERROR
+
+    try:
+        store = MigrationStore(
+            base_dir=getattr(args, "store_dir", None),
+        )
+        mig = store.get(args.id)
+        if mig is None:
+            print(f"error: migration not found: {args.id}", file=sys.stderr)
+            return EXIT_ERROR
+
+        rollback = getattr(args, "rollback", False)
+        result = apply_migration(
+            mig,
+            target,
+            store,
+            dry_run=dry_run,
+            rollback=rollback,
+        )
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+    if fmt == "json":
+        print(
+            json.dumps(
+                {
+                    "migration_id": result.migration_id,
+                    "success": result.success,
+                    "message": result.message,
+                    "dry_run": result.dry_run,
+                    "sql": result.sql,
+                },
+                indent=2,
+            )
+        )
+    else:
+        if result.dry_run:
+            print(f"Dry run — {result.message}")
+            print(f"\n{result.sql}")
+        elif result.success:
+            print(f"OK: {result.message}")
+        else:
+            print(f"FAILED: {result.message}", file=sys.stderr)
+
+    return EXIT_OK if result.success else EXIT_ERROR
+
+
+def _cmd_migrate_delete(args: argparse.Namespace) -> int:
+    from patchworks.db.migration import MigrationStore
+
+    try:
+        store = MigrationStore(
+            base_dir=getattr(args, "store_dir", None),
+        )
+        deleted = store.delete(args.id)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+    if fmt == "json":
+        print(json.dumps({"id": args.id, "deleted": deleted}, indent=2))
+    else:
+        if deleted:
+            print(f"Migration deleted: {args.id}")
+        else:
+            print(f"error: migration not found: {args.id}", file=sys.stderr)
+            return EXIT_ERROR
+
+    return EXIT_OK
+
+
+def _cmd_migrate_squash(args: argparse.Namespace) -> int:
+    from patchworks.db.migration import MigrationStore
+    from patchworks.diff.migration import squash_migrations
+
+    try:
+        store = MigrationStore(
+            base_dir=getattr(args, "store_dir", None),
+        )
+        migrations = store.list()
+        if len(migrations) < 2:
+            print("error: need at least 2 migrations to squash", file=sys.stderr)
+            return EXIT_ERROR
+
+        result = squash_migrations(
+            migrations,
+            store,
+            source_path=getattr(args, "source", None),
+            name=getattr(args, "name", None),
+            dry_run=getattr(args, "dry_run", False),
+        )
+    except (ValueError, Exception) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+    if fmt == "json":
+        d: dict[str, Any] = {
+            "dry_run": result.dry_run,
+            "squashed_count": result.squashed_count,
+            "forward_sql": result.forward_sql,
+            "reverse_sql": result.reverse_sql,
+        }
+        if result.migration:
+            d["migration"] = _migration_to_dict(result.migration)
+        print(json.dumps(d, indent=2))
+    else:
+        if result.dry_run:
+            print(f"Dry run — would squash {result.squashed_count} migrations.")
+        else:
+            assert result.migration is not None
+            print(
+                f"Squashed {result.squashed_count} migrations into: "
+                f"{result.migration.id}"
+            )
+            if result.migration.name:
+                print(f"  Name: {result.migration.name}")
+            print(f"  Sequence: {result.migration.sequence}")
+        print(f"  Forward SQL: {len(result.forward_sql)} chars")
+        print(f"  Reverse SQL: {len(result.reverse_sql)} chars")
+
+    return EXIT_OK
+
+
+def _cmd_migrate_conflicts(args: argparse.Namespace) -> int:
+    from patchworks.db.migration import MigrationStore
+    from patchworks.diff.migration import detect_conflicts
+
+    try:
+        store = MigrationStore(
+            base_dir=getattr(args, "store_dir", None),
+        )
+        report = detect_conflicts(store)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fmt = getattr(args, "format", "human")
+    if fmt == "json":
+        print(
+            json.dumps(
+                {
+                    "has_conflicts": report.has_conflicts,
+                    "conflicts": [
+                        {
+                            "migration_a_id": c.migration_a_id,
+                            "migration_b_id": c.migration_b_id,
+                            "shared_objects": c.shared_objects,
+                            "description": c.description,
+                        }
+                        for c in report.conflicts
+                    ],
+                },
+                indent=2,
+            )
+        )
+    else:
+        if not report.has_conflicts:
+            print("No conflicts detected.")
+        else:
+            print(f"Conflicts ({len(report.conflicts)}):")
+            for c in report.conflicts:
+                print(f"  {c.description}")
+
+    return EXIT_DIFFERENCES if report.has_conflicts else EXIT_OK
+
+
+def _migration_to_dict(m: MigrationInfo) -> dict[str, Any]:
+    """Convert a MigrationInfo to a JSON-friendly dict."""
+    return {
+        "id": m.id,
+        "name": m.name,
+        "sequence": m.sequence,
+        "source_path": m.source_path,
+        "target_path": m.target_path,
+        "forward_sql": m.forward_sql,
+        "reverse_sql": m.reverse_sql,
+        "objects_touched": m.objects_touched,
+        "created_at": m.created_at,
+        "applied": m.applied,
+        "applied_at": m.applied_at,
+    }
 
 
 def _cmd_serve(args: argparse.Namespace) -> int:
@@ -406,42 +789,60 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # migrate ---------------------------------------------------------------
     p_migrate = sub.add_parser("migrate", help="Migration workflow management")
+    p_migrate.add_argument(
+        "--store-dir",
+        help=argparse.SUPPRESS,
+        default=None,
+    )
     mig_sub = p_migrate.add_subparsers(dest="migrate_command", title="migrate commands")
+
+    _fmt_args = {
+        "choices": ["human", "json"],
+        "default": "human",
+        "help": "Output format (default: human)",
+    }
 
     p_mig_gen = mig_sub.add_parser("generate", help="Generate a migration")
     p_mig_gen.add_argument("left", help="Base database")
     p_mig_gen.add_argument("right", help="Target database")
     p_mig_gen.add_argument("--name", help="Migration name")
     p_mig_gen.add_argument("--dry-run", action="store_true", help="Preview only")
+    p_mig_gen.add_argument("--format", **_fmt_args)  # type: ignore[arg-type]
 
     p_mig_validate = mig_sub.add_parser("validate", help="Validate a migration")
     p_mig_validate.add_argument("id", help="Migration ID")
+    p_mig_validate.add_argument("--format", **_fmt_args)  # type: ignore[arg-type]
 
     p_mig_list = mig_sub.add_parser("list", help="List migrations")
-    p_mig_list.add_argument(
-        "--format",
-        choices=["human", "json"],
-        default="human",
-        help="Output format",
-    )
+    p_mig_list.add_argument("--format", **_fmt_args)  # type: ignore[arg-type]
 
     p_mig_show = mig_sub.add_parser("show", help="Show migration details")
     p_mig_show.add_argument("id", help="Migration ID")
+    p_mig_show.add_argument("--format", **_fmt_args)  # type: ignore[arg-type]
 
     p_mig_apply = mig_sub.add_parser("apply", help="Apply a migration")
     p_mig_apply.add_argument("id", help="Migration ID")
     p_mig_apply.add_argument("target", help="Target database")
     p_mig_apply.add_argument("--dry-run", action="store_true", help="Preview only")
+    p_mig_apply.add_argument(
+        "--rollback",
+        action="store_true",
+        help="Apply reverse migration",
+    )
+    p_mig_apply.add_argument("--format", **_fmt_args)  # type: ignore[arg-type]
 
     p_mig_delete = mig_sub.add_parser("delete", help="Delete a migration")
     p_mig_delete.add_argument("id", help="Migration ID")
+    p_mig_delete.add_argument("--format", **_fmt_args)  # type: ignore[arg-type]
 
     p_mig_squash = mig_sub.add_parser("squash", help="Squash migrations")
     p_mig_squash.add_argument("--source", help="Source database")
     p_mig_squash.add_argument("--name", help="Squashed migration name")
     p_mig_squash.add_argument("--dry-run", action="store_true", help="Preview only")
+    p_mig_squash.add_argument("--format", **_fmt_args)  # type: ignore[arg-type]
 
-    mig_sub.add_parser("conflicts", help="Show migration conflicts")
+    p_mig_conflicts = mig_sub.add_parser("conflicts", help="Show migration conflicts")
+    p_mig_conflicts.add_argument("--format", **_fmt_args)  # type: ignore[arg-type]
 
     p_migrate.set_defaults(func=_cmd_migrate)
 

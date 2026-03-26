@@ -35,10 +35,10 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current execution posture
 
-The project is at Phase 7 - three-way merge.
+The project is at Phase 8 - migration workflow management.
 
 - **Stack decision:** Python is the primary language. Go is reserved for hot paths if Python's performance becomes a bottleneck on large databases.
-- **Phases 0–6 are complete and verified.** Core inspection, diffing, snapshots, SQL export, CLI surface, and advanced diff intelligence are all shipped and tested (202+ tests passing).
+- **Phases 0–8 are complete and verified.** Core inspection, diffing, snapshots, SQL export, CLI surface, advanced diff intelligence, three-way merge, and migration workflow management are all shipped and tested (290 tests passing).
 - **Discipline:** Roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -228,7 +228,7 @@ Snapshots, export, merge, and migration workflows.
 | 5 | CLI surface | **Done** |
 | 6 | Advanced diff intelligence | **Done** |
 | 7 | Three-way merge | **Done** |
-| 8 | Migration workflow management | **Planned** |
+| 8 | Migration workflow management | **Done** |
 | 9 | Local web UI | **Planned** |
 | 10 | Go acceleration layer | **Exploratory** |
 | 11 | CI/CD integration and automation | **Planned** |
@@ -426,27 +426,27 @@ Exit criteria:
 ---
 
 ### Phase 8 - Migration workflow management
-**Status: planned**
+**Status: done**
 
 Ordered migration sequences with validation and safety.
 
-- [ ] Implement `db/migration.py`: `MigrationStore` in `~/.patchworks/patchworks.db`
-- [ ] Implement `diff/migration.py`: generation, validation, rollback, squashing
-- [ ] Generate forward migrations using the diff+export engine
-- [ ] Generate reverse migrations for rollback
-- [ ] Validate migrations by applying to a temporary copy and diffing against target
-- [ ] Squash sequential migrations into a single migration
-- [ ] Detect conflicts between migrations targeting the same objects
-- [ ] Add `patchworks migrate` subcommand family: `generate`, `validate`, `list`, `show`, `apply`, `delete`, `squash`, `conflicts`
-- [ ] Add `--dry-run` mode for generate, apply, and squash
-- [ ] Add `--format human|json` on all migrate subcommands
-- [ ] Add comprehensive tests for all migration operations
+- [x] Implement `db/migration.py`: `MigrationStore` in `~/.patchworks/patchworks.db`
+- [x] Implement `diff/migration.py`: generation, validation, rollback, squashing
+- [x] Generate forward migrations using the diff+export engine
+- [x] Generate reverse migrations for rollback
+- [x] Validate migrations by applying to a temporary copy and diffing against target
+- [x] Squash sequential migrations into a single migration
+- [x] Detect conflicts between migrations targeting the same objects
+- [x] Add `patchworks migrate` subcommand family: `generate`, `validate`, `list`, `show`, `apply`, `delete`, `squash`, `conflicts`
+- [x] Add `--dry-run` mode for generate, apply, and squash
+- [x] Add `--format human|json` on all migrate subcommands
+- [x] Add comprehensive tests for all migration operations
 
 Exit criteria:
 
-- [ ] Users can generate, validate, apply, rollback, and squash migrations via CLI
-- [ ] `--dry-run` never modifies the target database
-- [ ] Migration state is persisted and queryable
+- [x] Users can generate, validate, apply, rollback, and squash migrations via CLI
+- [x] `--dry-run` never modifies the target database
+- [x] Migration state is persisted and queryable
 
 ---
 
@@ -634,9 +634,9 @@ If picking this repo up for the next pass:
 
 ## Immediate next moves
 
-1. **Complete Phase 7 - three-way merge.** `diff/merge.py`, merge CLI subcommand, conflict detection and reporting.
-2. **Build Phase 8 - migration workflow management.** `db/migration.py`, `diff/migration.py`, generate/validate/apply/squash migrations.
-3. **Build Phase 9 - local web UI.** FastAPI + htmx for interactive browsing and diff review.
+1. **Build Phase 9 - local web UI.** FastAPI + htmx for interactive browsing and diff review.
+2. **Build Phase 11 - CI/CD integration and automation.** `patchworks check` command, GitHub Actions integration, pre-commit hooks.
+3. **Explore Phase 10 - Go acceleration layer.** Profile Python hot paths, identify bottlenecks.
 
 If priorities change, replace this list rather than letting stale direction linger.
 
@@ -648,6 +648,7 @@ If priorities change, replace this list rather than letting stale direction ling
 
 ### 2026-03-26
 
+- Completed Phase 8: migration workflow management. `db/migration.py` (MigrationStore with save/list/get/delete/mark_applied/mark_unapplied/squash), `diff/migration.py` (generate_migration, validate_migration, apply_migration with rollback, squash_migrations, detect_conflicts). Full CLI `migrate` subcommand family: generate, validate, list, show, apply, delete, squash, conflicts. --dry-run on generate/apply/squash. --format human|json on all subcommands. --rollback on apply. 52 new tests (290 total). Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 9 local web UI.
 - Completed Phase 7: three-way merge engine (`diff/merge.py`), CLI `merge` subcommand with `--format human|json`, comprehensive tests for non-conflicting merges, row conflicts, schema conflicts, delete-modify conflicts, table-delete conflicts, and edge cases. Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 8 migration workflow management.
 - Updated BUILD.md: checked off all Phase 0–6 boxes against actual codebase. All 202+ tests passing. All quality gates green.
 
