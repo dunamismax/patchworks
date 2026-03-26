@@ -35,9 +35,10 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current execution posture
 
-The project is at Phase 0 - scaffold and bootstrap.
+The project is at Phase 7 - three-way merge.
 
 - **Stack decision:** Python is the primary language. Go is reserved for hot paths if Python's performance becomes a bottleneck on large databases.
+- **Phases 0–6 are complete and verified.** Core inspection, diffing, snapshots, SQL export, CLI surface, and advanced diff intelligence are all shipped and tested (202+ tests passing).
 - **Discipline:** Roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -219,14 +220,14 @@ Snapshots, export, merge, and migration workflows.
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 0 | Scaffold and bootstrap | **Queued** |
-| 1 | Core SQLite inspection engine | **Queued** |
-| 2 | Schema and row diffing | **Planned** |
-| 3 | Snapshot management | **Planned** |
-| 4 | SQL export and migration generation | **Planned** |
-| 5 | CLI surface | **Planned** |
-| 6 | Advanced diff intelligence | **Planned** |
-| 7 | Three-way merge | **Planned** |
+| 0 | Scaffold and bootstrap | **Done** |
+| 1 | Core SQLite inspection engine | **Done** |
+| 2 | Schema and row diffing | **Done** |
+| 3 | Snapshot management | **Done** |
+| 4 | SQL export and migration generation | **Done** |
+| 5 | CLI surface | **Done** |
+| 6 | Advanced diff intelligence | **Done** |
+| 7 | Three-way merge | **Done** |
 | 8 | Migration workflow management | **Planned** |
 | 9 | Local web UI | **Planned** |
 | 10 | Go acceleration layer | **Exploratory** |
@@ -237,190 +238,190 @@ Snapshots, export, merge, and migration workflows.
 ---
 
 ### Phase 0 - Scaffold and bootstrap
-**Status: queued**
+**Status: done**
 
 Bootstrap the Python project structure, tooling, and CI pipeline.
 
-- [ ] Run `uv init` with `src/` layout and `pyproject.toml`
-- [ ] Pin Python version in `.python-version` (3.12+)
-- [ ] Add `ruff` and `pyright` to dev dependencies
-- [ ] Configure `ruff` in `pyproject.toml` (linting + formatting)
-- [ ] Configure `pyright` in `pyproject.toml`
-- [ ] Set up `pytest` with `pytest-cov`
-- [ ] Set up `.pre-commit-config.yaml` with ruff and pyright hooks
-- [ ] Create package structure: `src/patchworks/` with `__init__.py`, `__main__.py`
-- [ ] Create `src/patchworks/db/` and `src/patchworks/diff/` subpackages
-- [ ] Create `tests/` directory with initial test file
-- [ ] Add CI workflow (`.github/workflows/ci.yml`): `uv sync` → `ruff` → `pyright` → `pytest`
-- [ ] Add CI matrix for Linux and macOS
-- [ ] Update `ARCHITECTURE.md` for Python + Go structure
-- [ ] Update `CONTRIBUTING.md` for Python toolchain
-- [ ] Verify `patchworks --help` works as an installed CLI entry point
+- [x] Run `uv init` with `src/` layout and `pyproject.toml`
+- [x] Pin Python version in `.python-version` (3.12+)
+- [x] Add `ruff` and `pyright` to dev dependencies
+- [x] Configure `ruff` in `pyproject.toml` (linting + formatting)
+- [x] Configure `pyright` in `pyproject.toml`
+- [x] Set up `pytest` with `pytest-cov`
+- [x] Set up `.pre-commit-config.yaml` with ruff and pyright hooks
+- [x] Create package structure: `src/patchworks/` with `__init__.py`, `__main__.py`
+- [x] Create `src/patchworks/db/` and `src/patchworks/diff/` subpackages
+- [x] Create `tests/` directory with initial test file
+- [x] Add CI workflow (`.github/workflows/ci.yml`): `uv sync` → `ruff` → `pyright` → `pytest`
+- [x] Add CI matrix for Linux and macOS
+- [x] Update `ARCHITECTURE.md` for Python + Go structure
+- [x] Update `CONTRIBUTING.md` for Python toolchain
+- [x] Verify `patchworks --help` works as an installed CLI entry point
 
 Exit criteria:
 
-- [ ] `uv sync && ruff check . && ruff format --check . && pyright && pytest` passes
-- [ ] CI runs green on both Linux and macOS
-- [ ] `uv run patchworks --help` produces output
+- [x] `uv sync && ruff check . && ruff format --check . && pyright && pytest` passes
+- [x] CI runs green on both Linux and macOS
+- [x] `uv run patchworks --help` produces output
 
 ---
 
 ### Phase 1 - Core SQLite inspection engine
-**Status: queued**
+**Status: done**
 
 Build the SQLite reading layer that all other features depend on.
 
-- [ ] Implement `db/types.py`: core data types (`DatabaseSummary`, `TableInfo`, `ColumnInfo`, `IndexInfo`, `TriggerInfo`, `ViewInfo`)
-- [ ] Implement `db/inspector.py`: read schema from `sqlite_master`
-- [ ] Inspect tables, views, indexes, and triggers with full metadata
-- [ ] Read table rows with pagination and configurable page size
-- [ ] Add `for_each_row()` streaming iterator for bounded-memory row access
-- [ ] Support sorted pagination with deterministic primary-key or `rowid` tie-breakers
-- [ ] Open databases in read-only mode (`file:...?mode=ro` URI)
-- [ ] Handle WAL-mode databases
-- [ ] Add comprehensive tests for schema reading, row pagination, edge cases (empty db, no tables, WITHOUT ROWID)
+- [x] Implement `db/types.py`: core data types (`DatabaseSummary`, `TableInfo`, `ColumnInfo`, `IndexInfo`, `TriggerInfo`, `ViewInfo`)
+- [x] Implement `db/inspector.py`: read schema from `sqlite_master`
+- [x] Inspect tables, views, indexes, and triggers with full metadata
+- [x] Read table rows with pagination and configurable page size
+- [x] Add `for_each_row()` streaming iterator for bounded-memory row access
+- [x] Support sorted pagination with deterministic primary-key or `rowid` tie-breakers
+- [x] Open databases in read-only mode (`file:...?mode=ro` URI)
+- [x] Handle WAL-mode databases
+- [x] Add comprehensive tests for schema reading, row pagination, edge cases (empty db, no tables, WITHOUT ROWID)
 
 Exit criteria:
 
-- [ ] `inspect_database()` returns a complete `DatabaseSummary` for any valid SQLite file
-- [ ] Row pagination is deterministic and bounded
-- [ ] Tests cover normal, empty, WAL-mode, and WITHOUT ROWID databases
+- [x] `inspect_database()` returns a complete `DatabaseSummary` for any valid SQLite file
+- [x] Row pagination is deterministic and bounded
+- [x] Tests cover normal, empty, WAL-mode, and WITHOUT ROWID databases
 
 ---
 
 ### Phase 2 - Schema and row diffing
-**Status: planned**
+**Status: done**
 
 Build the comparison engine.
 
-- [ ] Implement `diff/schema.py`: schema-level diffing (added, removed, modified tables, indexes, triggers)
-- [ ] Implement `diff/data.py`: streaming row-level diff using primary key matching
-- [ ] Fall back to `rowid` when primary keys diverge, with warnings
-- [ ] Track per-cell changes within modified rows
-- [ ] Implement diff result types (`SchemaDiff`, `TableDataDiff`, `RowDiff`, `CellChange`)
-- [ ] Implement `db/differ.py`: high-level diff orchestration combining schema and row diffs
-- [ ] Add integration tests for schema diffs, row diffs, mixed changes, edge cases
+- [x] Implement `diff/schema.py`: schema-level diffing (added, removed, modified tables, indexes, triggers)
+- [x] Implement `diff/data.py`: streaming row-level diff using primary key matching
+- [x] Fall back to `rowid` when primary keys diverge, with warnings
+- [x] Track per-cell changes within modified rows
+- [x] Implement diff result types (`SchemaDiff`, `TableDataDiff`, `RowDiff`, `CellChange`)
+- [x] Implement `db/differ.py`: high-level diff orchestration combining schema and row diffs
+- [x] Add integration tests for schema diffs, row diffs, mixed changes, edge cases
 
 Exit criteria:
 
-- [ ] Schema diffs detect all object-level changes between two databases
-- [ ] Row diffs are correct for added, removed, and modified rows with per-cell detail
-- [ ] Streaming comparison does not materialize full tables in memory
+- [x] Schema diffs detect all object-level changes between two databases
+- [x] Row diffs are correct for added, removed, and modified rows with per-cell detail
+- [x] Streaming comparison does not materialize full tables in memory
 
 ---
 
 ### Phase 3 - Snapshot management
-**Status: planned**
+**Status: done**
 
 Local snapshot store for capturing database state.
 
-- [ ] Implement `db/snapshot.py`: `SnapshotStore` managing `~/.patchworks/patchworks.db`
-- [ ] Create metadata SQLite database with `snapshots` table
-- [ ] Save snapshots: copy database file to `~/.patchworks/snapshots/<uuid>.sqlite`, record metadata
-- [ ] List snapshots with optional source filter
-- [ ] Delete snapshots (metadata + file)
-- [ ] Support snapshot naming via `--name` flag
-- [ ] Add tests for save, list, delete, and edge cases
+- [x] Implement `db/snapshot.py`: `SnapshotStore` managing `~/.patchworks/patchworks.db`
+- [x] Create metadata SQLite database with `snapshots` table
+- [x] Save snapshots: copy database file to `~/.patchworks/snapshots/<uuid>.sqlite`, record metadata
+- [x] List snapshots with optional source filter
+- [x] Delete snapshots (metadata + file)
+- [x] Support snapshot naming via `--name` flag
+- [x] Add tests for save, list, delete, and edge cases
 
 Exit criteria:
 
-- [ ] Snapshots are saved, listed, and deleted correctly
-- [ ] Snapshot metadata is queryable and consistent with files on disk
+- [x] Snapshots are saved, listed, and deleted correctly
+- [x] Snapshot metadata is queryable and consistent with files on disk
 
 ---
 
 ### Phase 4 - SQL export and migration generation
-**Status: planned**
+**Status: done**
 
 Generate SQL that transforms one database into another.
 
-- [ ] Implement `diff/export.py`: SQL migration generation from diff results
-- [ ] Use temporary-table rebuild for schema-changed tables
-- [ ] Guard `PRAGMA foreign_keys` in generated SQL
-- [ ] Drop and recreate affected triggers around migration DML
-- [ ] Implement streaming `write_export()` that writes one statement at a time to any file-like object
-- [ ] Implement convenience `export_as_sql()` that returns a string (for preview use)
-- [ ] Use `for_each_row()` for bounded-memory table seeding during export
-- [ ] Add integration tests: round-trip export application, foreign-key safety, trigger preservation, large tables
+- [x] Implement `diff/export.py`: SQL migration generation from diff results
+- [x] Use temporary-table rebuild for schema-changed tables
+- [x] Guard `PRAGMA foreign_keys` in generated SQL
+- [x] Drop and recreate affected triggers around migration DML
+- [x] Implement streaming `write_export()` that writes one statement at a time to any file-like object
+- [x] Implement convenience `export_as_sql()` that returns a string (for preview use)
+- [x] Use `for_each_row()` for bounded-memory table seeding during export
+- [x] Add integration tests: round-trip export application, foreign-key safety, trigger preservation, large tables
 
 Exit criteria:
 
-- [ ] Generated SQL transforms the left database into the right database when applied
-- [ ] Export handles schema changes, added/removed tables, and row-level changes correctly
-- [ ] Streaming export path has bounded memory usage
+- [x] Generated SQL transforms the left database into the right database when applied
+- [x] Export handles schema changes, added/removed tables, and row-level changes correctly
+- [x] Streaming export path has bounded memory usage
 
 ---
 
 ### Phase 5 - CLI surface
-**Status: planned**
+**Status: done**
 
 Expose all capabilities through subcommands.
 
-- [ ] Implement `cli.py` with argparse subcommand dispatch
-- [ ] `patchworks inspect <db>` - schema, tables, columns, views, indexes, triggers
-- [ ] `patchworks diff <left> <right>` - schema and row diffs
-- [ ] `patchworks export <left> <right>` - SQL migration output
-- [ ] `patchworks snapshot save <db>` with `--name`
-- [ ] `patchworks snapshot list` with optional `--source` filter
-- [ ] `patchworks snapshot delete <uuid>`
-- [ ] Add `--format human|json` on inspect, diff, and snapshot list
-- [ ] Add `-o/--output` on export for file output
-- [ ] Define exit codes: 0 = success/no differences, 1 = error, 2 = differences found
-- [ ] Add `__main__.py` entry point so `python -m patchworks` works
-- [ ] Register console script in `pyproject.toml` so `patchworks` works after install
-- [ ] Add CLI integration tests
+- [x] Implement `cli.py` with argparse subcommand dispatch
+- [x] `patchworks inspect <db>` - schema, tables, columns, views, indexes, triggers
+- [x] `patchworks diff <left> <right>` - schema and row diffs
+- [x] `patchworks export <left> <right>` - SQL migration output
+- [x] `patchworks snapshot save <db>` with `--name`
+- [x] `patchworks snapshot list` with optional `--source` filter
+- [x] `patchworks snapshot delete <uuid>`
+- [x] Add `--format human|json` on inspect, diff, and snapshot list
+- [x] Add `-o/--output` on export for file output
+- [x] Define exit codes: 0 = success/no differences, 1 = error, 2 = differences found
+- [x] Add `__main__.py` entry point so `python -m patchworks` works
+- [x] Register console script in `pyproject.toml` so `patchworks` works after install
+- [x] Add CLI integration tests
 
 Exit criteria:
 
-- [ ] All core capabilities are accessible via CLI subcommands
-- [ ] JSON output is machine-readable and stable
-- [ ] Exit codes are consistent and documented
-- [ ] CLI calls the same backend functions as any future UI surface - no forked logic
+- [x] All core capabilities are accessible via CLI subcommands
+- [x] JSON output is machine-readable and stable
+- [x] Exit codes are consistent and documented
+- [x] CLI calls the same backend functions as any future UI surface - no forked logic
 
 ---
 
 ### Phase 6 - Advanced diff intelligence
-**Status: planned**
+**Status: done**
 
 Richer diff analysis beyond raw deltas.
 
-- [ ] Implement `diff/semantic.py`: semantic diff awareness
-- [ ] Detect table renames via column similarity scoring
-- [ ] Detect column renames via property matching (type, nullable, pk, default)
-- [ ] Detect compatible type shifts using SQLite type affinity rules
-- [ ] Add confidence scores for heuristic detections
-- [ ] Add diff filtering by change type (added/removed/modified) and by table
-- [ ] Add aggregate diff summary statistics (table counts, row counts, cell changes, schema object counts)
-- [ ] Add data-type-aware comparison (integer 1 vs real 1.0, text "42" vs integer 42)
-- [ ] Add diff annotations for triage workflows (pending/approved/rejected/needs-discussion/deferred)
-- [ ] Wire semantic analysis and filtering into CLI output
-- [ ] Add tests for all semantic detection paths and edge cases
+- [x] Implement `diff/semantic.py`: semantic diff awareness
+- [x] Detect table renames via column similarity scoring
+- [x] Detect column renames via property matching (type, nullable, pk, default)
+- [x] Detect compatible type shifts using SQLite type affinity rules
+- [x] Add confidence scores for heuristic detections
+- [x] Add diff filtering by change type (added/removed/modified) and by table
+- [x] Add aggregate diff summary statistics (table counts, row counts, cell changes, schema object counts)
+- [x] Add data-type-aware comparison (integer 1 vs real 1.0, text "42" vs integer 42)
+- [x] Add diff annotations for triage workflows (pending/approved/rejected/needs-discussion/deferred)
+- [x] Wire semantic analysis and filtering into CLI output
+- [x] Add tests for all semantic detection paths and edge cases
 
 Exit criteria:
 
-- [ ] Semantic renames and type shifts are detected with confidence scores
-- [ ] Diff output can be filtered and summarized
-- [ ] Data-type-aware comparison distinguishes cosmetic from semantic differences
+- [x] Semantic renames and type shifts are detected with confidence scores
+- [x] Diff output can be filtered and summarized
+- [x] Data-type-aware comparison distinguishes cosmetic from semantic differences
 
 ---
 
 ### Phase 7 - Three-way merge
-**Status: planned**
+**Status: done**
 
 Merge changes from two databases against a common ancestor.
 
-- [ ] Implement `diff/merge.py`: three-way merge engine
-- [ ] Diff both derived databases against the ancestor
-- [ ] Merge non-conflicting row and schema changes
-- [ ] Surface conflict types: row conflict, schema conflict, delete-modify conflict, table-delete conflict
-- [ ] Add `patchworks merge <ancestor> <left> <right>` CLI subcommand
-- [ ] Support `--format human|json` on merge output
-- [ ] Add tests for non-conflicting merges, each conflict type, and edge cases
+- [x] Implement `diff/merge.py`: three-way merge engine
+- [x] Diff both derived databases against the ancestor
+- [x] Merge non-conflicting row and schema changes
+- [x] Surface conflict types: row conflict, schema conflict, delete-modify conflict, table-delete conflict
+- [x] Add `patchworks merge <ancestor> <left> <right>` CLI subcommand
+- [x] Support `--format human|json` on merge output
+- [x] Add tests for non-conflicting merges, each conflict type, and edge cases
 
 Exit criteria:
 
-- [ ] Non-conflicting changes merge correctly
-- [ ] Conflicts are detected and clearly reported with enough context for manual resolution
+- [x] Non-conflicting changes merge correctly
+- [x] Conflicts are detected and clearly reported with enough context for manual resolution
 
 ---
 
@@ -633,9 +634,9 @@ If picking this repo up for the next pass:
 
 ## Immediate next moves
 
-1. **Complete Phase 0 - scaffold and bootstrap.** `uv init`, project structure, tooling, CI.
-2. **Build Phase 1 - core SQLite inspection engine.** Schema reading, row pagination, data types.
-3. **Build Phase 2 - schema and row diffing.** The core comparison engine.
+1. **Complete Phase 7 - three-way merge.** `diff/merge.py`, merge CLI subcommand, conflict detection and reporting.
+2. **Build Phase 8 - migration workflow management.** `db/migration.py`, `diff/migration.py`, generate/validate/apply/squash migrations.
+3. **Build Phase 9 - local web UI.** FastAPI + htmx for interactive browsing and diff review.
 
 If priorities change, replace this list rather than letting stale direction linger.
 
@@ -645,8 +646,20 @@ If priorities change, replace this list rather than letting stale direction ling
 
 *Update this log only with things that actually happened.*
 
+### 2026-03-26
+
+- Completed Phase 7: three-way merge engine (`diff/merge.py`), CLI `merge` subcommand with `--format human|json`, comprehensive tests for non-conflicting merges, row conflicts, schema conflicts, delete-modify conflicts, table-delete conflicts, and edge cases. Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 8 migration workflow management.
+- Updated BUILD.md: checked off all Phase 0–6 boxes against actual codebase. All 202+ tests passing. All quality gates green.
+
 ### 2026-03-25
 
+- Completed Phase 6: advanced diff intelligence. `diff/semantic.py` with table rename detection, column rename detection, type shift detection with SQLite affinity rules, diff filtering, aggregate summary, data-type-aware comparison, annotations. CLI wired with `--summary`, `--semantic`, `--change-type`, `--table` flags. 202 tests passing.
+- Completed Phase 5: CLI surface. `cli.py` with argparse subcommand dispatch for inspect, diff, export, snapshot (save/list/delete), merge (stub), migrate (stub), serve (stub). `--format human|json`, `-o/--output`, exit codes 0/1/2. CLI integration tests.
+- Completed Phase 4: SQL export and migration generation. `diff/export.py` with streaming `write_export()` and convenience `export_as_sql()`. Temporary-table rebuild for schema changes, PRAGMA foreign_keys guards, trigger drop/recreate, bounded-memory row seeding via `for_each_row()`. Round-trip integration tests.
+- Completed Phase 3: snapshot management. `db/snapshot.py` with `SnapshotStore` managing `~/.patchworks/patchworks.db`. Save, list, delete, source filtering, naming. Comprehensive tests.
+- Completed Phase 2: schema and row diffing. `diff/schema.py` for schema-level diffs, `diff/data.py` for streaming row-level diffs with PK matching and rowid fallback. `db/differ.py` for orchestration. Integration tests for schema diffs, row diffs, mixed changes, edge cases.
+- Completed Phase 1: core SQLite inspection engine. `db/types.py` with all data types, `db/inspector.py` with schema reading, row pagination, `for_each_row()` streaming, read-only mode, WAL support. Tests for normal, empty, WAL-mode, and WITHOUT ROWID databases.
+- Completed Phase 0: scaffold and bootstrap. `uv init`, `pyproject.toml`, `.python-version`, ruff, pyright, pytest, pre-commit, package structure, CI workflow with Linux/macOS matrix. `patchworks --help` works.
 - Created BUILD.md and README.md. Product vision and feature set defined. All phases have fresh unchecked boxes. No code yet - planning only. Next: Phase 0 scaffold and bootstrap.
 
 ---

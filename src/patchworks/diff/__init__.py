@@ -1,16 +1,27 @@
 """Comparison algorithms, export generation, and semantic analysis."""
 
-from patchworks.diff.data import diff_table_data
-from patchworks.diff.export import export_as_sql, write_export
+from __future__ import annotations
+
 from patchworks.diff.schema import diff_schemas
-from patchworks.diff.semantic import analyze, filter_diff, summarize_diff
 
 __all__ = [
-    "analyze",
     "diff_schemas",
-    "diff_table_data",
-    "export_as_sql",
-    "filter_diff",
-    "summarize_diff",
-    "write_export",
 ]
+
+
+def __getattr__(name: str) -> object:
+    # Lazy imports to break circular dependency chains between db/ and diff/.
+    if name == "diff_table_data":
+        from patchworks.diff.data import diff_table_data
+
+        return diff_table_data
+    if name in ("export_as_sql", "write_export"):
+        from patchworks.diff import export as _export
+
+        return getattr(_export, name)
+    if name in ("analyze", "filter_diff", "summarize_diff"):
+        from patchworks.diff import semantic as _semantic
+
+        return getattr(_semantic, name)
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

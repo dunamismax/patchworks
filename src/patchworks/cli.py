@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         SemanticAnalysis,
         TableDataDiff,
     )
+    from patchworks.diff.merge import MergeResult
 
 # ---------------------------------------------------------------------------
 # Exit codes
@@ -250,9 +251,31 @@ def _cmd_snapshot_delete(args: argparse.Namespace) -> int:
 
 def _cmd_merge(args: argparse.Namespace) -> int:
     """Three-way merge of SQLite databases."""
-    _ = args
-    print("merge: not yet implemented")
-    return EXIT_OK
+    from pathlib import Path
+
+    from patchworks.diff.merge import merge_databases
+
+    ancestor = Path(args.ancestor)
+    left = Path(args.left)
+    right = Path(args.right)
+
+    for p, label in ((ancestor, "ancestor"), (left, "left"), (right, "right")):
+        if not p.exists():
+            print(f"error: {label} database not found: {p}", file=sys.stderr)
+            return EXIT_ERROR
+
+    try:
+        result = merge_databases(str(ancestor), str(left), str(right))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    if args.format == "json":
+        print(json.dumps(_merge_to_dict(result), indent=2))
+    else:
+        _print_merge_human(result)
+
+    return EXIT_DIFFERENCES if result.has_conflicts else EXIT_OK
 
 
 def _cmd_migrate(args: argparse.Namespace) -> int:
@@ -814,6 +837,88 @@ def _print_semantic(analysis: SemanticAnalysis) -> None:
                 f"{ts.old_type} -> {ts.new_type} "
                 f"({ts.old_affinity} -> {ts.new_affinity}, {compat})"
             )
+
+
+def _merge_to_dict(result: MergeResult) -> dict[str, Any]:
+    """Convert a :class:`MergeResult` to a JSON-friendly dict."""
+    return {
+        "ancestor_path": result.ancestor_path,
+        "left_path": result.left_path,
+        "right_path": result.right_path,
+        "is_clean": result.is_clean,
+        "conflicts": [
+            {
+                "kind": c.kind,
+                "table": c.table,
+                "description": c.description,
+                "left_detail": c.left_detail,
+                "right_detail": c.right_detail,
+                "key": list(c.key),
+            }
+            for c in result.conflicts
+        ],
+        "merged_rows": [
+            {
+                "table": mr.table,
+                "kind": mr.kind,
+                "source": mr.source,
+                "key": list(mr.key),
+                "values": _serialize_row(mr.values),
+            }
+            for mr in result.merged_rows
+        ],
+        "merged_schema": [
+            {
+                "table": ms.table,
+                "kind": ms.kind,
+                "source": ms.source,
+                "sql": ms.sql,
+            }
+            for ms in result.merged_schema
+        ],
+    }
+
+
+def _print_merge_human(result: MergeResult) -> None:
+    """Print a human-readable merge result to stdout."""
+    if result.is_clean and not result.merged_rows and not result.merged_schema:
+        print("No changes to merge.")
+        return
+
+    if result.merged_schema:
+        print("Schema changes (merged):")
+        for ms in result.merged_schema:
+            prefix = {"added": "+", "removed": "-", "modified": "~"}.get(ms.kind, "?")
+            print(f"  {prefix} Table: {ms.table} (from {ms.source})")
+        print()
+
+    if result.merged_rows:
+        # Group by table.
+        tables: dict[str, list[Any]] = {}
+        for mr in result.merged_rows:
+            tables.setdefault(mr.table, []).append(mr)
+
+        print("Row changes (merged):")
+        for table_name in sorted(tables):
+            rows = tables[table_name]
+            added = sum(1 for r in rows if r.kind == "added")
+            removed = sum(1 for r in rows if r.kind == "removed")
+            modified = sum(1 for r in rows if r.kind == "modified")
+            print(f"  Table {table_name}: +{added} -{removed} ~{modified} rows")
+        print()
+
+    if result.has_conflicts:
+        print(f"CONFLICTS ({len(result.conflicts)}):")
+        for c in result.conflicts:
+            print(f"  [{c.kind}] {c.description}")
+            if c.left_detail:
+                print(f"    left:  {c.left_detail}")
+            if c.right_detail:
+                print(f"    right: {c.right_detail}")
+        print()
+        print("Merge has conflicts. Manual resolution required.")
+    else:
+        print("Merge is clean. No conflicts.")
 
 
 def _get_version() -> str:

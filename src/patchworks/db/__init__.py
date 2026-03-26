@@ -1,6 +1,7 @@
 """Database inspection, snapshots, and diff orchestration."""
 
-from patchworks.db.differ import diff_databases
+from __future__ import annotations
+
 from patchworks.db.inspector import (
     for_each_row,
     inspect_database,
@@ -44,9 +45,19 @@ __all__ = [
     "TriggerSchemaDiff",
     "ViewInfo",
     "ViewSchemaDiff",
-    "diff_databases",
     "for_each_row",
     "inspect_database",
     "inspect_table",
     "read_rows",
 ]
+
+
+def __getattr__(name: str) -> object:
+    # Lazy import to break circular dependency: db.__init__ -> db.differ ->
+    # diff.data -> db.inspector -> db.__init__.
+    if name == "diff_databases":
+        from patchworks.db.differ import diff_databases
+
+        return diff_databases
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)
