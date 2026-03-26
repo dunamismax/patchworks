@@ -7,7 +7,7 @@ Technical architecture for patchworks. Written for a developer picking up the re
 - **Python** (3.12+) is the primary language. CLI, orchestration, diff logic, export generation, and all user-facing tooling live in Python.
 - **Go** is reserved for performance-critical hot paths. It will only be introduced when profiling shows Python is the bottleneck on a specific operation. Until then, Go does not exist in this repo.
 - **SQLite** is accessed through Python's stdlib `sqlite3` module in read-only mode. If Go components are added later, they use `modernc.org/sqlite` (no CGO).
-- **FastAPI + htmx** powers the local web UI in a later phase. The CLI ships first.
+- **FastAPI + htmx** powers the local web UI for interactive browsing and diff review.
 
 ## Directory layout
 
@@ -31,17 +31,22 @@ src/patchworks/
     semantic.py            Semantic diff awareness (renames, type shifts)
     merge.py               Three-way merge and conflict detection
     migration.py           Migration generation, validation, squashing
+  web/
+    __init__.py
+    app.py                 FastAPI application factory
+    routes.py              Web UI routes (schema browser, diff viewer, export, snapshots)
+    templates/             Jinja2 templates (base, pages, partials)
+    static/style.css       Hand-written CSS with light/dark theme support
 tests/
-  test_inspector.py
-  test_differ.py
-  test_schema_diff.py
-  test_data_diff.py
-  test_export.py
-  test_snapshot.py
   test_cli.py
+  test_diff.py
+  test_export.py
+  test_inspector.py
   test_merge.py
   test_migration.py
   test_semantic.py
+  test_snapshot.py
+  test_web.py
 go/                        (future, only when profiling justifies it)
 pyproject.toml             Single project manifest
 .python-version            Pinned Python version
@@ -173,9 +178,9 @@ Subcommands: `inspect`, `diff`, `export`, `snapshot` (save/list/delete), `merge`
 
 All read-oriented commands support `--format human|json`. Export supports `-o/--output <file>`. Exit codes: 0 = success/no differences, 1 = error, 2 = differences found.
 
-## Web UI (later phase)
+## Web UI
 
-FastAPI serves Jinja2 templates with htmx for dynamic interaction. The web UI calls the same `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` functions as the CLI. No forked logic between surfaces. Launched via `patchworks serve`.
+FastAPI serves Jinja2 templates with htmx for dynamic interaction. The web UI calls the same `inspect_database`, `diff_databases`, `write_export`, and `SnapshotStore` functions as the CLI. No forked logic between surfaces. Launched via `patchworks serve`. Light/dark theme support via `prefers-color-scheme` and manual toggle.
 
 ## SQLite interaction model
 

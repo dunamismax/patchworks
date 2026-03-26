@@ -35,10 +35,10 @@ The through-line is unchanged: SQLite-specific correctness first. Every new feat
 
 ## Current execution posture
 
-The project is at Phase 9 - local web UI.
+v1.0.0 is released. Phases 0-9 are complete.
 
 - **Stack decision:** Python is the primary language. Go is reserved for hot paths if Python's performance becomes a bottleneck on large databases.
-- **Phases 0–9 are complete and verified.** Core inspection, diffing, snapshots, SQL export, CLI surface, advanced diff intelligence, three-way merge, migration workflow management, and local web UI are all shipped and tested (317 tests passing).
+- **Phases 0-9 are complete and verified.** Core inspection, diffing, snapshots, SQL export, CLI surface, advanced diff intelligence, three-way merge, migration workflow management, and local web UI are all shipped and tested (317 tests passing).
 - **Discipline:** Roadmap boxes are not aspiration theater. Check them only after code lands and the relevant verification is recorded.
 
 If a future pass changes the real priorities, update this section first rather than letting the roadmap drift silently.
@@ -257,7 +257,7 @@ Bootstrap the Python project structure, tooling, and CI pipeline.
 - [x] Create package structure: `src/patchworks/` with `__init__.py`, `__main__.py`
 - [x] Create `src/patchworks/db/` and `src/patchworks/diff/` subpackages
 - [x] Create `tests/` directory with initial test file
-- [x] Add CI workflow (`.github/workflows/ci.yml`): `uv sync` → `ruff` → `pyright` → `pytest`
+- [x] Add CI workflow (`.github/workflows/ci.yml`): `uv sync` then `ruff` then `pyright` then `pytest`
 - [x] Add CI matrix for Linux and macOS
 - [x] Update `ARCHITECTURE.md` for Python + Go structure
 - [x] Update `CONTRIBUTING.md` for Python toolchain
@@ -656,7 +656,7 @@ If priorities change, replace this list rather than letting stale direction ling
 - Completed Phase 9: local web UI. FastAPI + Jinja2 + htmx. `web/` package with `app.py` (application factory), `routes.py` (schema browser, row browser, diff viewer, SQL export preview, snapshot management), Jinja2 templates with htmx partials, hand-written CSS with light/dark theme support via `prefers-color-scheme` and manual toggle. `patchworks serve` CLI subcommand launches uvicorn. All routes call the same backend functions as the CLI (inspect_database, diff_databases, export_as_sql, SnapshotStore). Dependencies: fastapi, jinja2, uvicorn, python-multipart. 27 new tests (317 total). Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 11 CI/CD integration.
 - Completed Phase 8: migration workflow management. `db/migration.py` (MigrationStore with save/list/get/delete/mark_applied/mark_unapplied/squash), `diff/migration.py` (generate_migration, validate_migration, apply_migration with rollback, squash_migrations, detect_conflicts). Full CLI `migrate` subcommand family: generate, validate, list, show, apply, delete, squash, conflicts. --dry-run on generate/apply/squash. --format human|json on all subcommands. --rollback on apply. 52 new tests (290 total). Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 9 local web UI.
 - Completed Phase 7: three-way merge engine (`diff/merge.py`), CLI `merge` subcommand with `--format human|json`, comprehensive tests for non-conflicting merges, row conflicts, schema conflicts, delete-modify conflicts, table-delete conflicts, and edge cases. Verified with: `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run pytest`. Next: Phase 8 migration workflow management.
-- Updated BUILD.md: checked off all Phase 0–6 boxes against actual codebase. All 202+ tests passing. All quality gates green.
+- Updated BUILD.md: checked off all Phase 0-6 boxes against actual codebase. All 202+ tests passing. All quality gates green.
 
 ### 2026-03-25
 

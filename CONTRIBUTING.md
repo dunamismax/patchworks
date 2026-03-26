@@ -144,7 +144,6 @@ pytest tests/test_inspector.py::test_schema_reading
 
 - `BUILD.md` is the canonical execution plan and handoff document. Keep it current.
 - `README.md` is the public-facing product summary. Keep it honest.
-- `AGENTS.md` is the agent-facing architecture memo. Keep it concise.
 - `ARCHITECTURE.md` is the deep technical architecture document.
 - `CHANGELOG.md` tracks release history.
 - When docs and code disagree, code and tests win. Fix the docs immediately.

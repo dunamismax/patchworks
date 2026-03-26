@@ -8,7 +8,7 @@ Patchworks is a CLI tool that treats SQLite databases the way `git diff` treats 
 
 No cloud. No account. No daemon. Your databases, the truth.
 
-> **Status:** Early development. See [BUILD.md](BUILD.md) for the full roadmap and current phase.
+> **Status:** v1.0.0 shipped. See [BUILD.md](BUILD.md) for the full roadmap and future plans.
 
 ## Why patchworks?
 
@@ -16,26 +16,25 @@ Every team that ships software backed by SQLite eventually hits the same wall: "
 
 The existing options are grim - hex editors, ad-hoc scripts, manually eyeballing `sqlite3` output. Patchworks replaces all of that with a purpose-built comparison engine.
 
-## Target feature set
+## Feature set
 
 | Capability | Status |
 |---|---|
-| Inspect SQLite schema, tables, and views | Planned |
-| Browse rows with pagination | Planned |
-| Schema-level diff (tables, indexes, triggers) | Planned |
-| Row-level diff with streaming comparison | Planned |
-| Snapshot a database to `~/.patchworks/` for later comparison | Planned |
-| Generate SQL migration (left → right) | Planned |
-| Foreign-key-safe export with trigger preservation | Planned |
-| Table name search/filter | Planned |
-| Semantic diff awareness (renames, type shifts) | Planned |
-| Three-way merge with conflict detection | Planned |
-| Migration workflow management (generate, validate, apply, squash) | Planned |
-| Diff annotations for triage workflows | Planned |
-| Data-type-aware comparison rules | Planned |
-| Machine-readable JSON output | Planned |
-| CI-friendly exit codes | Planned |
-| Local web UI for interactive browsing | Planned |
+| Inspect SQLite schema, tables, and views | Shipped |
+| Browse rows with pagination | Shipped |
+| Schema-level diff (tables, indexes, triggers) | Shipped |
+| Row-level diff with streaming comparison | Shipped |
+| Snapshot a database to `~/.patchworks/` for later comparison | Shipped |
+| Generate SQL migration (left to right) | Shipped |
+| Foreign-key-safe export with trigger preservation | Shipped |
+| Semantic diff awareness (renames, type shifts) | Shipped |
+| Three-way merge with conflict detection | Shipped |
+| Migration workflow management (generate, validate, apply, squash) | Shipped |
+| Diff annotations for triage workflows | Shipped |
+| Data-type-aware comparison rules | Shipped |
+| Machine-readable JSON output | Shipped |
+| CI-friendly exit codes | Shipped |
+| Local web UI for interactive browsing | Shipped |
 
 ## Tech stack
 
@@ -46,7 +45,7 @@ The existing options are grim - hex editors, ad-hoc scripts, manually eyeballing
 - **Pyright** - type checking
 - **pytest** - testing
 - **sqlite3** - stdlib SQLite access (read-only)
-- **FastAPI + htmx** - local web UI (later phase)
+- **FastAPI + htmx** - local web UI for interactive browsing and diff review
 
 ## Install
 
@@ -154,17 +153,21 @@ src/patchworks/
 │   ├── semantic.py        # Semantic diff awareness (renames, type shifts)
 │   ├── merge.py           # Three-way merge and conflict detection
 │   └── migration.py       # Migration generation, validation, squashing
+├── web/                   # Local web UI (FastAPI + htmx)
+│   ├── app.py             # Application factory
+│   ├── routes.py          # Web UI routes
+│   ├── templates/         # Jinja2 templates
+│   └── static/            # CSS and static assets
 tests/
-├── test_inspector.py
-├── test_differ.py
-├── test_schema_diff.py
-├── test_data_diff.py
-├── test_export.py
-├── test_snapshot.py
 ├── test_cli.py
+├── test_diff.py
+├── test_export.py
+├── test_inspector.py
 ├── test_merge.py
 ├── test_migration.py
-└── test_semantic.py
+├── test_semantic.py
+├── test_snapshot.py
+└── test_web.py
 ```
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for deep technical details.

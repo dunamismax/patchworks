@@ -42,7 +42,7 @@ def _create_db(path: Path, statements: list[str] | None = None) -> Path:
 
 class TestSmoke:
     def test_version_string(self) -> None:
-        assert patchworks.__version__ == "0.1.0"
+        assert patchworks.__version__ == "1.0.0"
 
     def test_help_exits_zero(self) -> None:
         result = _run("--help")
@@ -65,7 +65,7 @@ class TestSmoke:
     def test_version_flag(self) -> None:
         result = _run("--version")
         assert result.returncode == 0
-        assert "0.1.0" in result.stdout
+        assert "1.0.0" in result.stdout
 
     def test_no_args_shows_help(self) -> None:
         result = _run()
